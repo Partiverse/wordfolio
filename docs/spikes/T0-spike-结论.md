@@ -29,11 +29,12 @@
 - `BUNDLED_EDITION` 常量目前手工维护在 `src/db/release.ts`（与 `assets/db/wordfolio.db` 同步改）；后续可由发布脚本注入。
 - 用户学习状态将存独立 `learning.db`（M-B 创建），发布物升级不影响用户数据。
 
-## 4. iOS 模拟器验证
+## 4. iOS 模拟器验证 ✅（2026-09-29 00:49 补验通过，commit e628ba3）
 
-- 环境事实：本机 Xcode 27.0 已装但未被 `xcode-select` 选中（CommandLineTools 为默认），simctl 需 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` 前缀；Xcode 27 已移除 Simulator.app（DeviceHub 替代）。
-- iPhone 17 模拟器（iOS 27.0）已 boot；Expo Go 57.0.9 下载受网络限速（GitHub Releases 直连被墙、代理 ~15KB/s），断点续传后台进行中。
-- iOS 验证不阻塞 T0 收尾：三个 spike 的关键问题（DB 读取、FTS5、打包）均为跨端行为，Android 实证 + 代码无平台分支；iOS 侧待 Expo Go 装入后跑同一 Spike 屏即可（操作步骤见 README）。
+- 环境事实：Xcode 27.0 未被 `xcode-select` 选中（simctl 需 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`）；Xcode 27 已移除 Simulator.app（DeviceHub 替代）；iOS 27 SDK 要求 scene-based life cycle，Expo SDK 57 需在 app.json 开 `ios.enableSceneSupport`（经 expo-build-properties，见 e628ba3）。
+- iOS 侧以本地 dev client 构建（`ios/` prebuild + CocoaPods）验证，iPhone 17 模拟器（iOS 27.0）实测：bootstrap v0.1-m1 499/2495、FTS5 YES、bm25 搜索 OK、expo-speech TTS onDone——与 Android 结果一致，spike 全部收口。
+- CJK LIKE 回退缺口在 iOS 同样确认，维持 M-A 内解决的既定决策。
+- pnpm 12 下 expo-build-packages 依赖链需批准 unrs-resolver 构建脚本（已随 e628ba3 配置）。
 
 ## 5. 环境坑备忘（复现构建时看）
 
