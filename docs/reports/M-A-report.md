@@ -15,14 +15,15 @@
 | 收藏 | ✅ | learning.db（ADR-0005 D3 用户库分离首次落地）+ zustand 乐观更新 + 收藏视图 |
 | TTS 点读 | ✅ | 词头/释义/例句中英点读（expo-speech） |
 | 暗色主题 | ✅ | tokens light/dark 双端实测（iOS 浏览屏 + Android 浏览/详情屏） |
-| 内部包 | ✅ | EAS 云构建（免费档）Android preview APK 产出并冒烟通过；iOS/TestFlight 另需 Apple 开发者账号（见 §2 备注） |
+| 内部包 | ✅ | Android beta 路径跑通（EAS 免费档 `beta` profile → internal APK）；iOS 分发按 ADR-0006 暂停 |
 
-降级说明：① nativewind 未接入（T0 决议维持 RN 主题对象，接入挪至 M-B 前评估）；② TestFlight 未开：EAS 免费档可出 iOS 包，但提交 TestFlight 需 Apple Developer Program（付费，$99/年）与 EAS 凭据；Android 内部包已通。
+降级说明：① nativewind 未接入（T0 决议维持 RN 主题对象，接入挪至 M-B 前评估）；② iOS 分发按 **ADR-0006** 暂停（不注册 Apple Developer Program，只发布 Android beta；iOS 代码与构建能力继续维护）。
 
 ## EAS 交付现状（2026-09-29 更新）
 
 - 账号：`partiverses-team`（Free 档）——**免费档额度足够本项目节奏**：每月 15 Android + 15 iOS 构建、低优先级队列、CI/CD 60 分钟、提交 App Store、EAS Update 1K MAU；免费档不会产生超额扣费（用尽即停）
 - 首次 Android preview 云构建：17 分钟（低优先级队列）→ `dist/wordfolio-preview-eas.apk`（105MB）→ 模拟器安装冒烟通过
+- **beta 通道已开**（ADR-0006）：版本 `0.1.0-beta.1`，`eas.json` `beta` profile（internal APK + channel `beta`），构建由本地发起（EXPO_TOKEN 走环境变量，不入 CI/仓库）
 - 实测队列延迟：低优先级下 17 分钟可接受；若 M-D 内测期需频繁出包，Starter（$19/月，含 $45 build credit）可换高优先级与超额能力
 
 ## §2 验收证据（替代 KPI 表）
