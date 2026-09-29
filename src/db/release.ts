@@ -26,6 +26,8 @@ type BootstrapActionLabel = 'copy' | 'recopy' | 'reuse';
 
 export interface SearchHit {
   stableId: string;
+  senseId: number;
+  entryId: number;
   headword: string;
   pos: string;
   definitionZh: string;
@@ -92,33 +94,4 @@ export async function readReleaseMeta(): Promise<ReleaseMeta> {
   };
 }
 
-// FTS5 检索：词头走 entry 前缀查询，中文释义/英文定义走 sense_fts MATCH
-export async function searchSenses(query: string, limit = 20): Promise<SearchHit[]> {
-  const q = query.trim();
-  if (!q) return [];
-  const db = await openReleaseDb();
-  const hasCjk = /[\u4e00-\u9fff]/.test(q);
-  const match = hasCjk ? `"${q}"` : `"${q}"*`;
-  return db.getAllAsync<SearchHit>(
-    `SELECT s.stable_id AS stableId,
-            e.headword   AS headword,
-            s.pos        AS pos,
-            s.definition_zh AS definitionZh
-       FROM sense_fts f
-       JOIN sense s ON s.id = f.rowid
-       JOIN entry e ON e.id = s.entry_id
-      WHERE sense_fts MATCH ?
-      ORDER BY bm25(sense_fts)
-      LIMIT ?`,
-    [match, limit],
-  );
-}
-
-export async function getEntryHeadwords(prefix: string, limit = 20): Promise<string[]> {
-  const db = await openReleaseDb();
-  const rows = await db.getAllAsync<{ headword: string }>(
-    'SELECT headword FROM entry WHERE headword LIKE ? || \'%\' ORDER BY freq_rank IS NULL, freq_rank LIMIT ?',
-    [prefix.trim(), limit],
-  );
-  return rows.map((r) => r.headword);
-}
+// 检索与浏览查询见 ./repository.ts（M-A 起集中管理，UI 不直接拼 SQL）。
