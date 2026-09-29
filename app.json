@@ -49,6 +49,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7de7e2f9-96e3-4177-a09e-4464f9797d76"
+      }
+    },
+    "owner": "partiverses-team"
   }
 }
