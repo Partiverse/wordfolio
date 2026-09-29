@@ -11,6 +11,13 @@
     "preview": {
       "distribution": "internal"
     },
+    "beta": {
+      "distribution": "internal",
+      "channel": "beta",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "autoIncrement": true
     }
