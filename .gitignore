@@ -48,3 +48,4 @@ example
 .video_agent/
 .zcodeignore
 screenshots/
+dist/
