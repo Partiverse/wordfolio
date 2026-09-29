@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { SenseCard } from '@/components/SenseCard';
 import { getEntryDetail, type EntryDetail } from '@/db/repository';
+import { useFavorites } from '@/stores/favorites';
 import { speakEn } from '@/utils/speech';
 import { useTheme } from '@/theme/tokens';
 
@@ -20,6 +21,11 @@ export default function EntryDetailScreen() {
   // null = 加载中；错误与「不存在」都落在 error
   const [entry, setEntry] = useState<EntryDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const { ids: favoriteIds, hydrate, toggle } = useFavorites();
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
   useEffect(() => {
     if (invalidId) return;
@@ -71,9 +77,21 @@ export default function EntryDetailScreen() {
         <View style={styles.headerCard}>
           <View style={styles.titleRow}>
             <Text style={styles.headword}>{entry.headword}</Text>
-            <Pressable onPress={() => speakEn(entry.headword)} hitSlop={10}>
-              <Text style={styles.speaker}>🔊</Text>
-            </Pressable>
+            <View style={styles.titleIcons}>
+              <Pressable
+                onPress={() => toggle(entry.entryId)}
+                hitSlop={10}
+                accessible
+                accessibilityLabel={favoriteIds.has(entry.entryId) ? '取消收藏' : '收藏'}
+              >
+                <Text style={[styles.star, favoriteIds.has(entry.entryId) && styles.starActive]}>
+                  {favoriteIds.has(entry.entryId) ? '★' : '☆'}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => speakEn(entry.headword)} hitSlop={10}>
+                <Text style={styles.speaker}>🔊</Text>
+              </Pressable>
+            </View>
           </View>
           <View style={styles.badgeRow}>
             {entry.ipaBr ? (
@@ -132,7 +150,10 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
       gap: 8,
     },
     titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    headword: { color: t.foreground, fontSize: 28, fontWeight: '800' },
+    titleIcons: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    star: { color: t.textMuted, fontSize: 24 },
+    starActive: { color: t.accentWarning },
+    headword: { color: t.foreground, fontSize: 28, fontWeight: '800', flexShrink: 1 },
     speaker: { fontSize: 22 },
     badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
     ipa: { color: t.textSecondary, fontSize: 14 },

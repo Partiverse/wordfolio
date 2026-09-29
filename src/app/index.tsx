@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,9 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { WordCard } from '@/components/WordCard';
-import { browseEntries, searchSenses, type BrowseItem } from '@/db/repository';
+import { browseEntries, searchSenses, type BrowseFilters, type BrowseItem } from '@/db/repository';
 import type { SearchHit } from '@/db/release';
 import { POS_OPTIONS } from '@/db/repository';
+import { useFavorites } from '@/stores/favorites';
 import { useTheme } from '@/theme/tokens';
 
 const PAGE_SIZE = 50;
@@ -34,6 +35,12 @@ export default function BrowseScreen() {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [pos, setPos] = useState<string | null>(null);
+  const [favOnly, setFavOnly] = useState(false);
+
+  const { ids: favoriteIds, hydrate, toggle } = useFavorites();
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
   // null = 尚未加载（派生 loading），加载后始终持有数据
   const [browse, setBrowse] = useState<BrowsePageState | null>(null);
@@ -53,13 +60,22 @@ export default function BrowseScreen() {
     return () => clearTimeout(timer);
   }, [query]);
 
+  // 筛选对象按分支分别 memo，避免无关状态变化（如点星标）触发浏览重载
+  const posFilters = useMemo<BrowseFilters>(() => ({ pos }), [pos]);
+  const favFilters = useMemo<BrowseFilters>(
+    () => ({ entryIds: [...favoriteIds], pos }),
+    [favoriteIds, pos],
+  );
+  const filters = favOnly ? favFilters : posFilters;
+
   // 浏览列表：筛选变化时重载首页（setState 只出现在异步回调中）。
-  // 注：v0.1-m1 尚无 CEFR 标注（entry.cefr 全 NULL），UI 只暴露词性筛选；
+  // 注：v0.1-m1 尚无 CEFR 标注（entry.cefr 全 NULL），UI 只暴露词性/收藏筛选；
   // repository 的 cefr 参数留给后续带标注的发布物。
   useEffect(() => {
     if (searching) return;
     let alive = true;
-    browseEntries(0, PAGE_SIZE, { pos })
+    offsetRef.current = 0;
+    browseEntries(0, PAGE_SIZE, filters)
       .then((page) => {
         if (!alive) return;
         setBrowse({ items: page.items, total: page.total });
@@ -70,7 +86,7 @@ export default function BrowseScreen() {
     return () => {
       alive = false;
     };
-  }, [searching, pos]);
+  }, [searching, filters]);
 
   // 搜索（中文走 LIKE 回退，拉丁走 FTS，见 src/db/repository.ts）
   useEffect(() => {
@@ -95,7 +111,7 @@ export default function BrowseScreen() {
   const loadMore = useCallback(() => {
     if (searching || loadingMoreRef.current || offsetRef.current >= total) return;
     loadingMoreRef.current = true;
-    browseEntries(offsetRef.current, PAGE_SIZE, { pos })
+    browseEntries(offsetRef.current, PAGE_SIZE, filters)
       .then((page) => {
         setBrowse((prev) =>
           prev
@@ -108,7 +124,7 @@ export default function BrowseScreen() {
       .finally(() => {
         loadingMoreRef.current = false;
       });
-  }, [searching, total, pos]);
+  }, [searching, total, filters]);
 
   const openEntry = useCallback(
     (entryId: number) => router.push(`/entry/${entryId}`),
@@ -137,7 +153,9 @@ export default function BrowseScreen() {
         <Text style={styles.subtitle}>
           {searching
             ? `${hits?.length ?? 0} 条搜索结果`
-            : `${browse?.total ?? 0} 词 · v0.1-m1`}
+            : favOnly
+              ? `${browse?.total ?? 0} 条收藏`
+              : `${browse?.total ?? 0} 词 · v0.1-m1`}
         </Text>
       </View>
 
@@ -153,6 +171,7 @@ export default function BrowseScreen() {
 
       {!searching && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
+          {renderChip('★ 收藏', favOnly, () => setFavOnly(!favOnly))}
           {renderChip('全部词性', pos === null, () => setPos(null))}
           {POS_OPTIONS.map((p) => renderChip(p, pos === p, () => setPos(p)))}
         </ScrollView>
@@ -186,9 +205,18 @@ export default function BrowseScreen() {
           refreshControl={
             <RefreshControl refreshing={loadingBrowse} tintColor={t.primary} />
           }
-          renderItem={({ item }) => <WordCard item={item} onPress={openEntry} />}
+          renderItem={({ item }) => (
+            <WordCard
+              item={item}
+              favorite={favoriteIds.has(item.entryId)}
+              onPress={openEntry}
+              onToggleFavorite={toggle}
+            />
+          )}
           ListEmptyComponent={
-            !loadingBrowse ? (
+            favOnly && !loadingBrowse ? (
+              <Text style={styles.muted}>还没有收藏，点卡片右上角 ☆ 收起来</Text>
+            ) : !loadingBrowse ? (
               <Text style={styles.muted}>没有词条</Text>
             ) : (
               <ActivityIndicator color={t.primary} />

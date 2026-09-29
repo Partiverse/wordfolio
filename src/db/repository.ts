@@ -17,6 +17,8 @@ export interface BrowseItem {
 export interface BrowseFilters {
   cefr?: string | null;
   pos?: string | null;
+  /** 限定词条 id 集（如收藏视图）；空数组直接返回空页 */
+  entryIds?: number[];
 }
 
 export interface BrowsePage {
@@ -78,6 +80,7 @@ export async function browseEntries(
   const db = await openReleaseDb();
   const cefr = normalizeFilter(filters.cefr, CEFR_VALUES);
   const pos = normalizeFilter(filters.pos, POS_VALUES);
+  const entryIds = filters.entryIds;
 
   const where: string[] = [];
   const params: (string | number)[] = [];
@@ -88,6 +91,11 @@ export async function browseEntries(
   if (pos) {
     where.push('EXISTS (SELECT 1 FROM sense fp WHERE fp.entry_id = e.id AND fp.pos = ?)');
     params.push(pos);
+  }
+  if (entryIds) {
+    if (entryIds.length === 0) return { items: [], total: 0 };
+    where.push(`e.id IN (${entryIds.map(() => '?').join(',')})`);
+    params.push(...entryIds);
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
