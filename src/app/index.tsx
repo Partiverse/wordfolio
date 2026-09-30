@@ -148,16 +148,23 @@ export default function BrowseScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Text style={styles.h1}>Wordfolio</Text>
-        <Text style={styles.subtitle}>
-          {searching
-            ? `${hits?.length ?? 0} 条搜索结果`
-            : favOnly
-              ? `${browse?.total ?? 0} 条收藏`
-              : `${browse?.total ?? 0} 词 · v0.1-m1`}
-        </Text>
-      </View>
+        <View style={styles.header}>
+          <View style={styles.titleRow}>
+            <View style={styles.titleCol}>
+              <Text style={styles.h1}>Wordfolio</Text>
+              <Text style={styles.subtitle}>
+                {searching
+                  ? `${hits?.length ?? 0} 条搜索结果`
+                  : favOnly
+                    ? `${browse?.total ?? 0} 条收藏`
+                    : `${browse?.total ?? 0} 词 · v0.1-m1`}
+              </Text>
+            </View>
+            <Pressable style={styles.studyBtn} onPress={() => router.push('/study')}>
+              <Text style={styles.studyBtnText}>学习</Text>
+            </Pressable>
+          </View>
+        </View>
 
       <TextInput
         style={styles.input}
@@ -248,6 +255,15 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: t.background, paddingHorizontal: 16 },
     header: { paddingTop: 8, paddingBottom: 10, gap: 2 },
+    titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    titleCol: { gap: 2, flexShrink: 1 },
+    studyBtn: {
+      backgroundColor: t.accentPrimary,
+      borderRadius: 999,
+      paddingHorizontal: 18,
+      paddingVertical: 8,
+    },
+    studyBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
     h1: { fontSize: 24, fontWeight: '800', color: t.foreground },
     subtitle: { fontSize: 13, color: t.mutedForeground },
     input: {

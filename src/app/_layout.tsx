@@ -14,6 +14,9 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" />
+        <Stack.Screen name="study" />
+        <Stack.Screen name="entry/[id]" />
+        <Stack.Screen name="spike" />
       </Stack>
       <StatusBar style={dark ? 'light' : 'dark'} />
     </ThemeProvider>

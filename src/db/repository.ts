@@ -202,6 +202,64 @@ function safeParseTags(json: string): string[] {
   }
 }
 
+export interface StudySense {
+  stableId: string;
+  headword: string;
+  pos: string;
+  labelZh: string | null;
+  definitionEn: string;
+  definitionZh: string;
+  exampleEn: string | null;
+  exampleZh: string | null;
+}
+
+// 学习队列用：按 stable_id 批量取义项（每义项取首条例句）。
+export async function getStudySenses(stableIds: readonly string[]): Promise<Map<string, StudySense>> {
+  const out = new Map<string, StudySense>();
+  if (stableIds.length === 0) return out;
+  const db = await openReleaseDb();
+  const placeholders = stableIds.map(() => '?').join(',');
+  const rows = await db.getAllAsync<{
+    stableId: string;
+    headword: string;
+    pos: string;
+    labelZh: string | null;
+    definitionEn: string;
+    definitionZh: string;
+    exampleEn: string | null;
+    exampleZh: string | null;
+  }>(
+    `SELECT s.stable_id AS stableId,
+            e.headword   AS headword,
+            s.pos        AS pos,
+            s.label_zh   AS labelZh,
+            s.definition_en AS definitionEn,
+            s.definition_zh AS definitionZh,
+            (SELECT x.text_en FROM example x WHERE x.sense_id = s.id ORDER BY x.id LIMIT 1) AS exampleEn,
+            (SELECT x.text_zh FROM example x WHERE x.sense_id = s.id ORDER BY x.id LIMIT 1) AS exampleZh
+       FROM sense s
+       JOIN entry e ON e.id = s.entry_id
+      WHERE s.stable_id IN (${placeholders})`,
+    [...stableIds],
+  );
+  for (const r of rows) out.set(r.stableId, r);
+  return out;
+}
+
+// 词库首批新卡候选：按词频排序的义项（义项级，先取前 limit 个）。
+export async function getSeedSenseIds(limit: number): Promise<string[]> {
+  const db = await openReleaseDb();
+  const rows = await db.getAllAsync<{ stableId: string }>(
+    `SELECT s.stable_id AS stableId
+       FROM sense s
+       JOIN entry e ON e.id = s.entry_id
+      ORDER BY e.freq_rank IS NULL, e.freq_rank, s.order_key
+      LIMIT ?`,
+    [limit],
+  );
+  return rows.map((r) => r.stableId);
+}
+
 // 检索：拉丁走 FTS5 前缀 + bm25；中文（或含中文的混查）走 LIKE 回退。
 // 每条命中带 entryId，供结果卡跳转词条详情。
 export async function searchSenses(query: string, limit = 30): Promise<SearchHit[]> {

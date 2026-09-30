@@ -1,7 +1,7 @@
 // 收藏内存态（zustand）：乐观更新 Set，再异步落 learning.db。
 import { create } from 'zustand';
 
-import { addFavoriteEntry, getFavoriteEntryIds, removeFavoriteEntry } from '@/db/learning';
+import { addFavoriteEntry, getFavoriteEntryIds, removeFavoriteEntry } from '@/db/study';
 import { applyToggle } from '@/db/learning-core';
 
 interface FavoritesState {
