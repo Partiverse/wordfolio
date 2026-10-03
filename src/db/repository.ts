@@ -260,6 +260,56 @@ export async function getSeedSenseIds(limit: number): Promise<string[]> {
   return rows.map((r) => r.stableId);
 }
 
+/**
+ * 四选一干扰项：随机抽 other senses 的释义做选项。
+ * 同词性优先（干扰更有效），词性候选不足时放宽到任意词性；
+ * 排除正确项本身与同词头的其它义项（同词头做干扰会变成「词义辨析」而非「义项辨析」）。
+ */
+export async function getDistractorSenses(
+  pos: string,
+  excludeStableId: string,
+  limit = 9,
+): Promise<StudySense[]> {
+  const db = await openReleaseDb();
+  const query = (wherePos: string) => `
+    SELECT s.stable_id AS stableId,
+           e.headword   AS headword,
+           s.pos        AS pos,
+           s.label_zh   AS labelZh,
+           s.definition_en AS definitionEn,
+           s.definition_zh AS definitionZh,
+           NULL AS exampleEn,
+           NULL AS exampleZh
+      FROM sense s
+      JOIN entry e ON e.id = s.entry_id
+     WHERE s.stable_id != ?
+       AND e.headword != (SELECT e2.headword FROM sense s2 JOIN entry e2 ON e2.id = s2.entry_id WHERE s2.stable_id = ?)
+       ${wherePos}
+     ORDER BY RANDOM()
+     LIMIT ?`;
+  let rows = await db.getAllAsync<StudySense>(query('AND s.pos = ?'), [
+    excludeStableId,
+    excludeStableId,
+    pos,
+    limit,
+  ]);
+  if (rows.length < limit) {
+    const extra = await db.getAllAsync<StudySense>(query(''), [
+      excludeStableId,
+      excludeStableId,
+      limit,
+    ]);
+    const seen = new Set(rows.map((r) => r.stableId));
+    for (const r of extra) {
+      if (!seen.has(r.stableId)) {
+        rows = [...rows, r];
+        seen.add(r.stableId);
+      }
+    }
+  }
+  return rows;
+}
+
 // 检索：拉丁走 FTS5 前缀 + bm25；中文（或含中文的混查）走 LIKE 回退。
 // 内测反馈「结果太多没意义」后的收紧策略（见 src/db/search.ts）：
 // ① 拉丁查询不足 2 字符直接拒（单字母前缀会命中海量）；中文单字仍可搜

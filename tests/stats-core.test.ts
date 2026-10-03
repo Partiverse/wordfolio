@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeStreak, todayKey } from '../src/study/stats-core';
+import { bucketHistory, computeStreak, todayKey } from '../src/study/stats-core';
 
 describe('computeStreak', () => {
   it('returns 0 with no history', () => {
@@ -31,5 +31,32 @@ describe('computeStreak', () => {
 describe('todayKey', () => {
   it('formats as YYYY-MM-DD in UTC', () => {
     expect(todayKey(new Date('2026-09-29T23:59:59.000Z'))).toBe('2026-09-29');
+  });
+});
+
+describe('bucketHistory', () => {
+  it('pads missing days with zero and ends at today', () => {
+    const out = bucketHistory([{ day: '2026-09-27', count: 5 }], 3, '2026-09-29');
+    expect(out).toEqual([
+      { day: '2026-09-27', count: 5 },
+      { day: '2026-09-28', count: 0 },
+      { day: '2026-09-29', count: 0 },
+    ]);
+  });
+
+  it('handles a month boundary', () => {
+    const out = bucketHistory([{ day: '2026-08-31', count: 2 }], 2, '2026-09-01');
+    expect(out.map((r) => r.day)).toEqual(['2026-08-31', '2026-09-01']);
+  });
+
+  it('returns all-zero for no rows', () => {
+    const out = bucketHistory([], 7, '2026-09-29');
+    expect(out).toHaveLength(7);
+    expect(out.every((r) => r.count === 0)).toBe(true);
+  });
+
+  it('ignores rows outside the window', () => {
+    const out = bucketHistory([{ day: '2026-01-01', count: 9 }], 2, '2026-09-29');
+    expect(out.map((r) => r.count)).toEqual([0, 0]);
   });
 });
