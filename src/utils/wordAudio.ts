@@ -18,8 +18,13 @@ async function ensureMode(): Promise<void> {
   }
 }
 
-const READY_TIMEOUT_MS = 4500;
+const READY_TIMEOUT_MS = 6500;
 const POLL_INTERVAL_MS = 250;
+
+/** 预取：卡片亮出词头时就开始解析+缓存音频 URL，把网络延迟藏进用户的思考时间。 */
+export function prefetchWordAudio(word: string): void {
+  void resolveAudioUrl(word).catch(() => {});
+}
 
 function waitUntilLoaded(player: AudioPlayer): Promise<boolean> {
   return new Promise((resolve) => {

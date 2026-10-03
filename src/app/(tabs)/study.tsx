@@ -26,7 +26,7 @@ import {
 } from '@/study/fsrs-core';
 import { todayKey } from '@/study/stats-core';
 import { speakEn, speakZh } from '@/utils/speech';
-import { playWordAudio } from '@/utils/wordAudio';
+import { playWordAudio, prefetchWordAudio } from '@/utils/wordAudio';
 import { useTheme } from '@/theme/tokens';
 
 const DEFAULT_TARGET = 20;
@@ -87,6 +87,12 @@ export default function StudyScreen() {
   const current = queue[0];
   const sense = current ? senses.get(current.stableId) : undefined;
   const progress = useMemo(() => queueProgress(completed, target), [completed, target]);
+
+  // 当前卡亮出即预取真人发音（URL 缓存），点喇叭时几乎零等待
+  const headword = sense?.headword;
+  useEffect(() => {
+    if (headword) prefetchWordAudio(headword);
+  }, [headword]);
 
   const rate = useCallback(
     async (grade: Grade) => {

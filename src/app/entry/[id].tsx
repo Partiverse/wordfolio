@@ -8,7 +8,7 @@ import { ChevronBackIcon, StarIcon, StarOutlineIcon, VolumeIcon } from '@/compon
 import { TtsBanner } from '@/components/TtsHint';
 import { getEntryDetail, type EntryDetail } from '@/db/repository';
 import { useFavorites } from '@/stores/favorites';
-import { playWordAudio } from '@/utils/wordAudio';
+import { playWordAudio, prefetchWordAudio } from '@/utils/wordAudio';
 import { useTheme } from '@/theme/tokens';
 
 export default function EntryDetailScreen() {
@@ -36,7 +36,10 @@ export default function EntryDetailScreen() {
       .then((e) => {
         if (!alive) return;
         if (!e) setError('词条不存在');
-        else setEntry(e);
+        else {
+          setEntry(e);
+          if (e.headword) prefetchWordAudio(e.headword);
+        }
       })
       .catch((err) => alive && setError(String(err)));
     return () => {
