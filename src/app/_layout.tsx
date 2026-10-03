@@ -10,11 +10,10 @@ export default function RootLayout() {
       <Stack
         screenOptions={{
           headerShown: false,
-          contentStyle: { backgroundColor: dark ? '#090d16' : '#f9f6f0' },
+          contentStyle: { backgroundColor: dark ? '#090d16' : '#f8fafc' },
         }}
       >
-        <Stack.Screen name="index" />
-        <Stack.Screen name="study" />
+        <Stack.Screen name="(tabs)" />
         <Stack.Screen name="entry/[id]" />
         <Stack.Screen name="spike" />
       </Stack>

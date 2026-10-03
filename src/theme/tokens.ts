@@ -86,6 +86,14 @@ export type ThemeTokens = Record<keyof typeof lightTokens, string>;
 export const radii = { sm: 6, md: 10, lg: 14, full: 999 } as const;
 export const spacing = (n: number) => n * 4;
 
+/**
+ * 语义色使用规范：内测反馈「颜色搭配混乱」后收敛——
+ * 全 app 只允许 3 类色相 + 中性阶，避免 brand / interactive / 各状态色混用。
+ *   brand（琥珀）  主行动：激活 chip、主按钮、已收藏星标
+ *   interactive（蓝）可点击文本：返回链接、筛选入口
+ *   neutral        中性阶：卡片、边框、正文层级
+ *   success（绿）   仅用于确切的「完成/正确」语义（进度条、完成页），不作装饰
+ */
 export function useTheme(): ThemeTokens {
   const scheme = useColorScheme();
   return scheme === 'dark' ? darkTokens : lightTokens;

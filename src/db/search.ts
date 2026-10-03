@@ -31,3 +31,25 @@ export function buildLikePattern(query: string): string {
 export function shouldUseLikeFallback(query: string): boolean {
   return hasCjk(query.trim());
 }
+
+/**
+ * 最短可检索长度：拉丁查询 1 个字母会命中海量前缀（FTS 前缀匹配），无意义；
+ * 中文单字有效（"走"），故只对拉丁设门槛。
+ */
+export function isTooShort(query: string): boolean {
+  const q = query.trim();
+  if (hasCjk(q)) return q.length === 0;
+  return q.length < 2;
+}
+
+/**
+ * 命中层级（越小越准），用于搜索结果排序：
+ * 0 词头精确匹配 → 1 词头前缀 → 2 释义/标签命中。
+ */
+export function matchRank(headword: string, query: string): 0 | 1 | 2 {
+  const q = query.trim().toLowerCase();
+  const head = headword.toLowerCase();
+  if (head === q) return 0;
+  if (head.startsWith(q)) return 1;
+  return 2;
+}

@@ -2,7 +2,7 @@
 // 发布物 DB 引导见 ./release.ts；查询构造纯函数见 ./search.ts。
 
 import { openReleaseDb, type SearchHit } from './release';
-import { buildFtsMatch, buildLikePattern, shouldUseLikeFallback } from './search';
+import { buildFtsMatch, buildLikePattern, isTooShort, shouldUseLikeFallback } from './search';
 
 export interface BrowseItem {
   entryId: number;
@@ -261,10 +261,13 @@ export async function getSeedSenseIds(limit: number): Promise<string[]> {
 }
 
 // 检索：拉丁走 FTS5 前缀 + bm25；中文（或含中文的混查）走 LIKE 回退。
-// 每条命中带 entryId，供结果卡跳转词条详情。
-export async function searchSenses(query: string, limit = 30): Promise<SearchHit[]> {
+// 内测反馈「结果太多没意义」后的收紧策略（见 src/db/search.ts）：
+// ① 拉丁查询不足 2 字符直接拒（单字母前缀会命中海量）；中文单字仍可搜
+// ② 结果按「词头精确 > 词头前缀 > 释义命中」分层，释义命中只取少量
+// ③ 总结果上限收紧，避免长列表淹没用户
+export async function searchSenses(query: string, limit = 20): Promise<SearchHit[]> {
   const q = query.trim();
-  if (!q) return [];
+  if (!q || isTooShort(q)) return [];
   const db = await openReleaseDb();
 
   const baseSelect = `SELECT s.stable_id AS stableId,
@@ -277,27 +280,46 @@ export async function searchSenses(query: string, limit = 30): Promise<SearchHit
   if (shouldUseLikeFallback(q)) {
     // LIKE 回退（ESCAPE '\'，模式由 buildLikePattern 转义 %/_）
     const pattern = buildLikePattern(q);
+    const headwordPattern = buildLikePattern(q);
     return db.getAllAsync<SearchHit>(
-      `${baseSelect}
+      `${baseSelect},
+              CASE WHEN lower(e.headword) = lower(?) THEN 0
+                   WHEN lower(e.headword) LIKE lower(?) THEN 1
+                   ELSE 2 END AS rank
          FROM sense s
          JOIN entry e ON e.id = s.entry_id
         WHERE s.definition_zh LIKE ? ESCAPE '\\'
            OR s.label_zh      LIKE ? ESCAPE '\\'
            OR e.headword      LIKE ? ESCAPE '\\'
-        ORDER BY e.freq_rank IS NULL, e.freq_rank, s.order_key
+        ORDER BY rank, e.freq_rank IS NULL, e.freq_rank, s.order_key
         LIMIT ?`,
-      [pattern, pattern, pattern, limit],
+      [q, headwordPattern, pattern, pattern, pattern, limit],
     );
   }
 
-  return db.getAllAsync<SearchHit>(
+  // 拉丁：先取词头精确/前缀命中（用户多半想找的就是这个词），再补释义命中
+  const byHeadword = await db.getAllAsync<SearchHit>(
+    `${baseSelect}
+       FROM sense s
+       JOIN entry e ON e.id = s.entry_id
+      WHERE lower(e.headword) LIKE lower(?) || '%'
+      ORDER BY CASE WHEN lower(e.headword) = lower(?) THEN 0 ELSE 1 END,
+               e.freq_rank IS NULL, e.freq_rank, s.order_key
+      LIMIT ?`,
+    [q, q, limit],
+  );
+  if (byHeadword.length >= limit) return byHeadword.slice(0, limit);
+
+  const byDefinition = await db.getAllAsync<SearchHit>(
     `${baseSelect}
        FROM sense_fts f
        JOIN sense s ON s.id = f.rowid
        JOIN entry e ON e.id = s.entry_id
       WHERE sense_fts MATCH ?
+        AND s.stable_id NOT IN (${byHeadword.map(() => '?').join(',') || "''"})
       ORDER BY bm25(sense_fts)
       LIMIT ?`,
-    [buildFtsMatch(q), limit],
+    [buildFtsMatch(q), ...byHeadword.map((h) => h.stableId), limit - byHeadword.length],
   );
+  return [...byHeadword, ...byDefinition];
 }

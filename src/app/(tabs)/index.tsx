@@ -4,7 +4,6 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,14 +12,19 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
+import { FilterChips, type Chip } from '@/components/FilterChips';
+import { SearchIcon, StarIcon } from '@/components/icons';
+import { TtsBanner } from '@/components/TtsHint';
 import { WordCard } from '@/components/WordCard';
 import { browseEntries, searchSenses, type BrowseFilters, type BrowseItem } from '@/db/repository';
 import type { SearchHit } from '@/db/release';
-import { POS_OPTIONS } from '@/db/repository';
+import { isTooShort } from '@/db/search';
 import { useFavorites } from '@/stores/favorites';
 import { useTheme } from '@/theme/tokens';
 
 const PAGE_SIZE = 50;
+// 词性筛选只暴露高频项（14 个铺满一屏既难用又挤）
+const VISIBLE_POS = ['n', 'v', 'adj', 'adv', 'prep', 'conj'] as const;
 
 interface BrowsePageState {
   items: BrowseItem[];
@@ -42,7 +46,7 @@ export default function BrowseScreen() {
     void hydrate();
   }, [hydrate]);
 
-  // null = 尚未加载（派生 loading），加载后始终持有数据
+  // null = 尚未加载（派生 loading）
   const [browse, setBrowse] = useState<BrowsePageState | null>(null);
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,17 +54,17 @@ export default function BrowseScreen() {
   const offsetRef = useRef(0);
   const loadingMoreRef = useRef(false);
   const searching = debounced.trim().length > 0;
+  const queryTooShort = searching && isTooShort(debounced);
   const total = browse?.total ?? 0;
   const loadingBrowse = !searching && browse === null;
   const loadingSearch = searching && hits === null;
 
-  // 搜索防抖 300ms
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(query), 300);
     return () => clearTimeout(timer);
   }, [query]);
 
-  // 筛选对象按分支分别 memo，避免无关状态变化（如点星标）触发浏览重载
+  // 筛选对象分别 memo，避免点星标之类无关状态触发浏览重载
   const posFilters = useMemo<BrowseFilters>(() => ({ pos }), [pos]);
   const favFilters = useMemo<BrowseFilters>(
     () => ({ entryIds: [...favoriteIds], pos }),
@@ -68,9 +72,6 @@ export default function BrowseScreen() {
   );
   const filters = favOnly ? favFilters : posFilters;
 
-  // 浏览列表：筛选变化时重载首页（setState 只出现在异步回调中）。
-  // 注：v0.1-m1 尚无 CEFR 标注（entry.cefr 全 NULL），UI 只暴露词性/收藏筛选；
-  // repository 的 cefr 参数留给后续带标注的发布物。
   useEffect(() => {
     if (searching) return;
     let alive = true;
@@ -88,9 +89,8 @@ export default function BrowseScreen() {
     };
   }, [searching, filters]);
 
-  // 搜索（中文走 LIKE 回退，拉丁走 FTS，见 src/db/repository.ts）
   useEffect(() => {
-    if (!searching) return;
+    if (!searching || queryTooShort) return;
     let alive = true;
     searchSenses(debounced)
       .then((h) => {
@@ -106,7 +106,7 @@ export default function BrowseScreen() {
     return () => {
       alive = false;
     };
-  }, [searching, debounced]);
+  }, [searching, queryTooShort, debounced]);
 
   const loadMore = useCallback(() => {
     if (searching || loadingMoreRef.current || offsetRef.current >= total) return;
@@ -126,82 +126,80 @@ export default function BrowseScreen() {
       });
   }, [searching, total, filters]);
 
-  const openEntry = useCallback(
-    (entryId: number) => router.push(`/entry/${entryId}`),
-    [router],
+  const chips: Chip[] = useMemo(
+    () => [
+      { label: '收藏', value: '__fav__' },
+      ...VISIBLE_POS.map((p) => ({ label: p, value: p })),
+    ],
+    [],
   );
-
-  const renderChip = (label: string, active: boolean, onPress: () => void) => (
-    <Pressable key={label} onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-    </Pressable>
-  );
-
-  if (error && !browse && !hits) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <Text style={styles.h1}>Wordfolio</Text>
-        <Text style={styles.error}>{error}</Text>
-      </SafeAreaView>
-    );
-  }
+  const activeChip = favOnly ? '__fav__' : pos;
+  const onChipChange = useCallback((value: string | null) => {
+    if (value === '__fav__') {
+      setFavOnly(true);
+      return;
+    }
+    setFavOnly(false);
+    setPos(value);
+  }, []);
 
   return (
-    <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <View style={styles.titleRow}>
-            <View style={styles.titleCol}>
-              <Text style={styles.h1}>Wordfolio</Text>
-              <Text style={styles.subtitle}>
-                {searching
-                  ? `${hits?.length ?? 0} 条搜索结果`
-                  : favOnly
-                    ? `${browse?.total ?? 0} 条收藏`
-                    : `${browse?.total ?? 0} 词 · v0.1-m1`}
-              </Text>
-            </View>
-            <Pressable style={styles.studyBtn} onPress={() => router.push('/study')}>
-              <Text style={styles.studyBtnText}>学习</Text>
-            </Pressable>
-          </View>
+    <SafeAreaView style={styles.safe} edges={['top']}>
+      <View style={styles.header}>
+        <View style={styles.titleCol}>
+          <Text style={styles.h1}>词库</Text>
+          <Text style={styles.subtitle}>
+            {searching
+              ? `${hits?.length ?? 0} 条结果`
+              : favOnly
+                ? `${browse?.total ?? 0} 条收藏`
+                : `${browse?.total ?? 0} 词 · v0.1-m1`}
+          </Text>
         </View>
+        {favoriteIds.size > 0 ? (
+          <View style={styles.favCount}>
+            <StarIcon color={t.primary} size={14} />
+            <Text style={styles.favCountText}>{favoriteIds.size}</Text>
+          </View>
+        ) : null}
+      </View>
 
-      <TextInput
-        style={styles.input}
-        value={query}
-        onChangeText={setQuery}
-        placeholder="搜词头或中文释义（如 run / 走）…"
-        placeholderTextColor={t.textMuted}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
+      <View style={styles.searchWrap}>
+        <SearchIcon color={t.textMuted} size={18} />
+        <TextInput
+          style={styles.input}
+          value={query}
+          onChangeText={setQuery}
+          placeholder="搜索词头或中文释义"
+          placeholderTextColor={t.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+        />
+      </View>
 
-      {!searching && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-          {renderChip('★ 收藏', favOnly, () => setFavOnly(!favOnly))}
-          {renderChip('全部词性', pos === null, () => setPos(null))}
-          {POS_OPTIONS.map((p) => renderChip(p, pos === p, () => setPos(p)))}
-        </ScrollView>
-      )}
+      <TtsBanner />
 
-      {searching ? (
+      <FilterChips chips={chips} active={activeChip} onChange={onChipChange} />
+
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+
+      {queryTooShort ? (
+        <Text style={styles.hint}>英文至少输入 2 个字母；中文可直接搜单字（如「走」）</Text>
+      ) : searching ? (
         <FlatList
-          key="search-list"
           data={hits ?? []}
           keyExtractor={(h) => h.stableId}
           contentContainerStyle={styles.list}
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={loadingSearch} tintColor={t.primary} />}
-          renderItem={({ item }) => (
-            <SearchHitRow hit={item} onPress={() => openEntry(item.entryId)} />
-          )}
+          renderItem={({ item }) => <SearchHitRow hit={item} onPress={() => router.push(`/entry/${item.entryId}`)} />}
           ListEmptyComponent={
-            !loadingSearch ? <Text style={styles.muted}>无结果，试试别的关键词</Text> : null
+            !loadingSearch ? <Text style={styles.muted}>没有匹配的义项，换个词试试</Text> : null
           }
         />
       ) : (
         <FlatList
-          key="browse-list"
           data={browse?.items ?? []}
           keyExtractor={(it) => String(it.entryId)}
           numColumns={2}
@@ -209,20 +207,18 @@ export default function BrowseScreen() {
           contentContainerStyle={styles.list}
           onEndReachedThreshold={0.4}
           onEndReached={loadMore}
-          refreshControl={
-            <RefreshControl refreshing={loadingBrowse} tintColor={t.primary} />
-          }
+          refreshControl={<RefreshControl refreshing={loadingBrowse} tintColor={t.primary} />}
           renderItem={({ item }) => (
             <WordCard
               item={item}
               favorite={favoriteIds.has(item.entryId)}
-              onPress={openEntry}
+              onPress={(entryId) => router.push(`/entry/${entryId}`)}
               onToggleFavorite={toggle}
             />
           )}
           ListEmptyComponent={
             favOnly && !loadingBrowse ? (
-              <Text style={styles.muted}>还没有收藏，点卡片右上角 ☆ 收起来</Text>
+              <Text style={styles.muted}>还没有收藏，点卡片右上角星标收起来</Text>
             ) : !loadingBrowse ? (
               <Text style={styles.muted}>没有词条</Text>
             ) : (
@@ -253,59 +249,42 @@ function SearchHitRow({ hit, onPress }: { hit: SearchHit; onPress: () => void })
 
 function makeStyles(t: ReturnType<typeof useTheme>) {
   return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: t.background, paddingHorizontal: 16 },
-    header: { paddingTop: 8, paddingBottom: 10, gap: 2 },
-    titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    titleCol: { gap: 2, flexShrink: 1 },
-    studyBtn: {
-      backgroundColor: t.accentPrimary,
-      borderRadius: 999,
-      paddingHorizontal: 18,
-      paddingVertical: 8,
-    },
-    studyBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
-    h1: { fontSize: 24, fontWeight: '800', color: t.foreground },
-    subtitle: { fontSize: 13, color: t.mutedForeground },
-    input: {
-      borderWidth: 1,
-      borderColor: t.input,
+    safe: { flex: 1, backgroundColor: t.bgCanvas, paddingHorizontal: 16, gap: 12 },
+    header: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingTop: 8 },
+    titleCol: { gap: 2 },
+    h1: { fontSize: 26, fontWeight: '800', color: t.textPrimary },
+    subtitle: { fontSize: 13, color: t.textMuted },
+    favCount: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 2 },
+    favCountText: { color: t.textSecondary, fontSize: 13, fontWeight: '600' },
+    searchWrap: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: t.bgSurface,
       borderRadius: 12,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      color: t.foreground,
-      fontSize: 15,
-      backgroundColor: t.card,
-      marginBottom: 10,
-    },
-    chipRow: { flexGrow: 0, marginBottom: 8 },
-    chip: {
-      borderRadius: 999,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.border,
-      backgroundColor: t.card,
+      borderColor: t.borderStrong,
       paddingHorizontal: 12,
-      paddingVertical: 6,
-      marginRight: 8,
+      height: 48,
     },
-    chipActive: { backgroundColor: t.primary, borderColor: t.primary },
-    chipText: { color: t.textSecondary, fontSize: 13, fontWeight: '600' },
-    chipTextActive: { color: t.primaryForeground },
-    list: { paddingBottom: 24, gap: 10 },
-    gridRow: { gap: 10 },
+    input: { flex: 1, color: t.textPrimary, fontSize: 16, height: 48 },
+    list: { paddingBottom: 24, gap: 12 },
+    gridRow: { gap: 12 },
     pressed: { opacity: 0.7 },
     hit: {
-      backgroundColor: t.card,
+      backgroundColor: t.bgSurface,
       borderRadius: 12,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.border,
-      padding: 12,
+      borderColor: t.borderSubtle,
+      padding: 14,
       gap: 4,
     },
     hitTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    hitHead: { color: t.foreground, fontWeight: '700', fontSize: 15 },
-    hitPos: { color: t.accentPrimary, fontSize: 12, fontWeight: '500' },
+    hitHead: { color: t.textPrimary, fontWeight: '700', fontSize: 15 },
+    hitPos: { color: t.textMuted, fontSize: 12, fontWeight: '600' },
     hitDef: { color: t.textSecondary, fontSize: 13 },
-    error: { color: t.destructive, fontSize: 12, marginBottom: 6 },
+    error: { color: t.destructive, fontSize: 12 },
+    hint: { color: t.textMuted, fontSize: 13, paddingVertical: 16 },
     muted: { color: t.textMuted, fontSize: 13, textAlign: 'center', paddingVertical: 24 },
   });
 }

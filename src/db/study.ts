@@ -182,3 +182,52 @@ export async function setDailyCompleted(day: string, completed: number, target: 
     [day, target, completed],
   );
 }
+
+export async function setDailyTarget(day: string, target: number): Promise<void> {
+  const db = await openLearningDb();
+  await db.runAsync(
+    `INSERT INTO daily_goal (day, target_count, completed_count) VALUES (?, ?, 0)
+     ON CONFLICT(day) DO UPDATE SET target_count = excluded.target_count`,
+    [day, target],
+  );
+}
+
+export interface StudyStats {
+  /** 有学习记录的天数（连续天数由调用方按日期序列计算） */
+  activeDays: string[];
+  totalReviews: number;
+  /** state: 0=New 1=Learning 2=Review 3=Relearning（ts-fsrs State 枚举序） */
+  stateCounts: { new: number; learning: number; review: number; relearning: number };
+  /** 复习间隔 ≥ 21 天的卡视为「已稳固」 */
+  solidCount: number;
+}
+
+/** 统计页数据：按 state 与到期情况汇总，不扫描逐卡明细给 UI。 */
+export async function getStudyStats(): Promise<StudyStats> {
+  const db = await openLearningDb();
+  const days = await db.getAllAsync<{ day: string; completed: number }>(
+    'SELECT day, completed_count AS completed FROM daily_goal WHERE completed_count > 0 ORDER BY day',
+  );
+  const states = await db.getAllAsync<{ state: number; n: number }>(
+    'SELECT state, COUNT(*) AS n FROM review_card GROUP BY state',
+  );
+  const reviews = await db.getFirstAsync<{ total: number }>(
+    'SELECT COALESCE(SUM(reps), 0) AS total FROM review_card',
+  );
+  const solid = await db.getFirstAsync<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM review_card WHERE state = 2 AND scheduled_days >= 21',
+  );
+
+  const count = (state: number) => states.find((s) => s.state === state)?.n ?? 0;
+  return {
+    activeDays: days.map((d) => d.day),
+    totalReviews: reviews?.total ?? 0,
+    stateCounts: {
+      new: count(0),
+      learning: count(1),
+      review: count(2),
+      relearning: count(3),
+    },
+    solidCount: solid?.n ?? 0,
+  };
+}

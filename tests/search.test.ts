@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildFtsMatch, buildLikePattern, escapeLike, hasCjk, shouldUseLikeFallback } from '../src/db/search';
+import {
+  buildFtsMatch,
+  buildLikePattern,
+  escapeLike,
+  hasCjk,
+  isTooShort,
+  matchRank,
+  shouldUseLikeFallback,
+} from '../src/db/search';
 
 describe('hasCjk', () => {
   it('detects CJK ideographs', () => {
@@ -52,5 +60,36 @@ describe('escapeLike / buildLikePattern', () => {
   it('builds escaped contains-pattern', () => {
     expect(buildLikePattern('走')).toBe('%走%');
     expect(buildLikePattern('100%')).toBe('%100\\%%');
+  });
+});
+
+// 内测反馈「搜索太宽泛」后的收紧规则
+describe('isTooShort', () => {
+  it('rejects single latin letters (FTS prefix would match thousands)', () => {
+    expect(isTooShort('a')).toBe(true);
+    expect(isTooShort(' r ')).toBe(true);
+  });
+
+  it('accepts 2+ latin letters', () => {
+    expect(isTooShort('ru')).toBe(false);
+    expect(isTooShort('run')).toBe(false);
+  });
+
+  it('accepts single CJK char (走 is a meaningful query)', () => {
+    expect(isTooShort('走')).toBe(false);
+  });
+
+  it('rejects empty and whitespace', () => {
+    expect(isTooShort('')).toBe(true);
+    expect(isTooShort('   ')).toBe(true);
+  });
+});
+
+describe('matchRank', () => {
+  it('ranks exact headword first, then prefix, then definition hits', () => {
+    expect(matchRank('run', 'run')).toBe(0);
+    expect(matchRank('run', 'Run')).toBe(0);
+    expect(matchRank('running', 'run')).toBe(1);
+    expect(matchRank('rerun', 'run')).toBe(2);
   });
 });

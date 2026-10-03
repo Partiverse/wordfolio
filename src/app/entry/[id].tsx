@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { SenseCard } from '@/components/SenseCard';
+import { ChevronBackIcon, StarIcon, StarOutlineIcon, VolumeIcon } from '@/components/icons';
+import { TtsBanner } from '@/components/TtsHint';
 import { getEntryDetail, type EntryDetail } from '@/db/repository';
 import { useFavorites } from '@/stores/favorites';
 import { speakEn } from '@/utils/speech';
@@ -45,7 +47,7 @@ export default function EntryDetailScreen() {
   if (invalidId) {
     return (
       <SafeAreaView style={styles.safe}>
-        <BackButton onPress={() => router.back()} />
+        <BackButton onPress={() => router.back()} styles={styles} />
         <Text style={styles.error}>无效词条 id: {id}</Text>
       </SafeAreaView>
     );
@@ -54,7 +56,7 @@ export default function EntryDetailScreen() {
   if (error) {
     return (
       <SafeAreaView style={styles.safe}>
-        <BackButton onPress={() => router.back()} />
+        <BackButton onPress={() => router.back()} styles={styles} />
         <Text style={styles.error}>{error}</Text>
       </SafeAreaView>
     );
@@ -71,7 +73,7 @@ export default function EntryDetailScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll}>
-        <BackButton onPress={() => router.back()} />
+        <BackButton onPress={() => router.back()} styles={styles} />
 
         {/* 词条头：词头 / IPA / 徽标 / 点读 */}
         <View style={styles.headerCard}>
@@ -80,16 +82,18 @@ export default function EntryDetailScreen() {
             <View style={styles.titleIcons}>
               <Pressable
                 onPress={() => toggle(entry.entryId)}
-                hitSlop={10}
+                hitSlop={12}
                 accessible
                 accessibilityLabel={favoriteIds.has(entry.entryId) ? '取消收藏' : '收藏'}
               >
-                <Text style={[styles.star, favoriteIds.has(entry.entryId) && styles.starActive]}>
-                  {favoriteIds.has(entry.entryId) ? '★' : '☆'}
-                </Text>
+                {favoriteIds.has(entry.entryId) ? (
+                  <StarIcon color={t.primary} size={24} />
+                ) : (
+                  <StarOutlineIcon color={t.textMuted} size={24} />
+                )}
               </Pressable>
-              <Pressable onPress={() => speakEn(entry.headword)} hitSlop={10}>
-                <Text style={styles.speaker}>🔊</Text>
+              <Pressable onPress={() => speakEn(entry.headword)} hitSlop={10} accessibilityLabel="朗读词头">
+                <VolumeIcon color={t.textSecondary} size={22} />
               </Pressable>
             </View>
           </View>
@@ -122,53 +126,67 @@ export default function EntryDetailScreen() {
             <SenseCard key={sense.stableId} sense={sense} />
           ))}
         </View>
+
+        <TtsBanner />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function BackButton({ onPress }: { onPress: () => void }) {
+function BackButton({
+  onPress,
+  styles,
+}: {
+  onPress: () => void;
+  styles: ReturnType<typeof makeStyles>;
+}) {
   const t = useTheme();
   return (
-    <Pressable onPress={onPress} hitSlop={12} style={{ alignSelf: 'flex-start', paddingVertical: 8 }}>
-      <Text style={{ color: t.accentPrimary, fontSize: 15, fontWeight: '600' }}>← 返回</Text>
+    <Pressable
+      onPress={onPress}
+      hitSlop={12}
+      style={styles.back}
+      accessibilityRole="button"
+      accessibilityLabel="返回"
+    >
+      <ChevronBackIcon color={t.accentPrimary} size={20} />
+      <Text style={styles.backText}>返回</Text>
     </Pressable>
   );
 }
 
 function makeStyles(t: ReturnType<typeof useTheme>) {
   return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: t.background, paddingHorizontal: 16 },
+    safe: { flex: 1, backgroundColor: t.bgCanvas, paddingHorizontal: 16 },
     scroll: { paddingBottom: 32, gap: 12 },
+    back: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', paddingVertical: 8 },
+    backText: { color: t.accentPrimary, fontSize: 15, fontWeight: '600' },
     error: { color: t.destructive, fontSize: 14, marginTop: 24 },
     headerCard: {
-      backgroundColor: t.card,
+      backgroundColor: t.bgSurface,
       borderRadius: 14,
       borderWidth: StyleSheet.hairlineWidth,
-      borderColor: t.border,
+      borderColor: t.borderSubtle,
       padding: 16,
       gap: 8,
     },
     titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     titleIcons: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-    star: { color: t.textMuted, fontSize: 24 },
-    starActive: { color: t.accentWarning },
-    headword: { color: t.foreground, fontSize: 28, fontWeight: '800', flexShrink: 1 },
-    speaker: { fontSize: 22 },
+    headword: { color: t.textPrimary, fontSize: 28, fontWeight: '800', flexShrink: 1 },
     badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
     ipa: { color: t.textSecondary, fontSize: 14 },
     badge: {
-      color: t.accentPrimary,
-      backgroundColor: t.accent,
+      color: t.textSecondary,
+      backgroundColor: t.bgSurfaceElevated,
       fontSize: 11,
       fontWeight: '700',
-      borderRadius: 6,
+      borderRadius: 5,
       overflow: 'hidden',
       paddingHorizontal: 6,
       paddingVertical: 2,
     },
     forms: { color: t.textSecondary, fontSize: 13 },
-    etym: { color: t.mutedForeground, fontSize: 13, lineHeight: 19 },
+    etym: { color: t.textMuted, fontSize: 13, lineHeight: 19 },
     senseList: { gap: 12 },
   });
 }
