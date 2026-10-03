@@ -1,14 +1,16 @@
 // 真人发音（内测反馈「发音无效，考虑从韦氏词典获取」）：
-// 供应商链：韦氏 Collegiate（配了 EXPO_PUBLIC_MW_API_KEY 时优先，真人读音）
-//          → Free Dictionary API（dictionaryapi.dev，免 key，聚合真人读音）
+// 供应商链：韦氏 Learner's（EXPO_PUBLIC_MW_API_KEY，真人读音；实测其 media CDN
+//          在无代理网络可达 HTTP 200，优于 dictionaryapi.dev 的 media 主机）
+//          → Free Dictionary API（dictionaryapi.dev，免 key；其 media 主机在无代理
+//          网络不可达，仅作 API 兜底）
 //          → 都失败返回 null，调用方回退 TTS。
 // 结果缓存 learning.db（audio_cache 表），同词二次播放不再联网，也为离线重听留底。
 //
-// 韦氏 key 免费注册：https://dictionaryapi.com（Collegiate Dictionary）。
+// 韦氏 Learner's key 免费注册：https://dictionaryapi.com（Learner's Dictionary）。
 // key 经 EXPO_PUBLIC_MW_API_KEY 环境变量进 bundle（公开变量，非机密；额度在韦氏侧限流）。
 
 const MW_KEY = process.env.EXPO_PUBLIC_MW_API_KEY;
-const MW_BASE = 'https://www.dictionaryapi.com/api/v3/references/collegiate/json';
+const MW_BASE = 'https://www.dictionaryapi.com/api/v3/references/learners/json';
 const MW_AUDIO_BASE = 'https://media.merriam-webster.com/audio/prons/en/us/mp3';
 const FREE_BASE = 'https://api.dictionaryapi.dev/api/v2/entries/en';
 const FETCH_TIMEOUT_MS = 5000;
