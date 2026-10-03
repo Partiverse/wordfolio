@@ -1,18 +1,20 @@
-// 真人发音（内测反馈「发音无效，考虑从韦氏词典获取」）：
-// 供应商链：韦氏 Learner's（EXPO_PUBLIC_MW_API_KEY，真人读音；实测其 media CDN
-//          在无代理网络可达 HTTP 200，优于 dictionaryapi.dev 的 media 主机）
-//          → Free Dictionary API（dictionaryapi.dev，免 key；其 media 主机在无代理
-//          网络不可达，仅作 API 兜底）
-//          → 都失败返回 null，调用方回退 TTS。
-// 结果缓存 learning.db（audio_cache 表），同词二次播放不再联网，也为离线重听留底。
-//
-// 韦氏 Learner's key 免费注册：https://dictionaryapi.com（Learner's Dictionary）。
-// key 经 EXPO_PUBLIC_MW_API_KEY 环境变量进 bundle（公开变量，非机密；额度在韦氏侧限流）。
+// 真人发音（内测反馈「发音无效」→「改用有道的免费 api」）：
+// 供应商链（2026-10-03 重排，有道首选）：
+//   1. 有道 dictvoice（dict.youdao.com，国内 CDN、免 key，实测 0.13–0.25s 返回
+//      128kbps 真 MP3——韦氏 media 主机的 1/20 延迟且稳定）
+//   2. 韦氏 Learner's（EXPO_PUBLIC_MW_API_KEY，真人录音，质量最优但 media CDN
+//      国内时通时断）——有道构造即得 URL，实际仅在显式调换顺序时生效
+//   3. Free Dictionary API（dictionaryapi.dev，免 key；media 主机国内不可达）
+//   → 都失败返回 null，调用方回退 TTS。
+// 结果缓存 learning.db（audio_cache 表），同词二次播放不再联网。
+// 注：有道接口为词典网页端点（非官方开放 API），内测流量可接受；若日后失效，
+// 调换 PROVIDER 顺序回到韦氏即可，调用方无感。
 
 const MW_KEY = process.env.EXPO_PUBLIC_MW_API_KEY;
 const MW_BASE = 'https://www.dictionaryapi.com/api/v3/references/learners/json';
 const MW_AUDIO_BASE = 'https://media.merriam-webster.com/audio/prons/en/us/mp3';
 const FREE_BASE = 'https://api.dictionaryapi.dev/api/v2/entries/en';
+const YOUDAO_BASE = 'https://dict.youdao.com/dictvoice';
 const FETCH_TIMEOUT_MS = 5000;
 
 // 注意：不能用 AbortSignal.timeout——Hermes 引擎未实现该 API，设备上会直接抛
@@ -31,7 +33,7 @@ async function fetchJson(url: string): Promise<unknown> {
   return res.json();
 }
 
-export type AudioSource = 'merriam-webster' | 'free-dictionary' | 'cache';
+export type AudioSource = 'youdao' | 'merriam-webster' | 'free-dictionary' | 'cache';
 
 const memoryCache = new Map<string, string | null>();
 
@@ -61,20 +63,33 @@ function resolveFreeUrl(payload: unknown): string | null {
   return null;
 }
 
+/** 有道 dictvoice：URL 构造即得（type=2 美音），国内 CDN 最稳最快。 */
+function youdaoProvider(word: string): { url: string; source: Exclude<AudioSource, 'cache'> } {
+  return { url: `${YOUDAO_BASE}?type=2&audio=${encodeURIComponent(word)}`, source: 'youdao' };
+}
+
+async function mwProvider(word: string): Promise<{ url: string; source: Exclude<AudioSource, 'cache'> } | null> {
+  if (!MW_KEY) return null;
+  const url = resolveMwUrl(await fetchJson(`${MW_BASE}/${encodeURIComponent(word.toLowerCase())}?key=${MW_KEY}`));
+  return url ? { url, source: 'merriam-webster' } : null;
+}
+
+async function freeProvider(word: string): Promise<{ url: string; source: Exclude<AudioSource, 'cache'> } | null> {
+  const url = resolveFreeUrl(await fetchJson(`${FREE_BASE}/${encodeURIComponent(word.toLowerCase())}`));
+  return url ? { url, source: 'free-dictionary' } : null;
+}
+
+// 顺序即优先级：有道（国内稳）→ 韦氏（录音质量最优，key 缺失时自动跳过）→ 免费词典
+const PROVIDERS = [youdaoProvider, mwProvider, freeProvider] as const;
+
 async function resolveRemote(word: string): Promise<{ url: string; source: Exclude<AudioSource, 'cache'> } | null> {
-  if (MW_KEY) {
+  for (const provider of PROVIDERS) {
     try {
-      const url = resolveMwUrl(await fetchJson(`${MW_BASE}/${encodeURIComponent(word.toLowerCase())}?key=${MW_KEY}`));
-      if (url) return { url, source: 'merriam-webster' };
+      const hit = await provider(word);
+      if (hit) return hit;
     } catch {
-      // 落到免费链路
+      // 尝试下一个源
     }
-  }
-  try {
-    const url = resolveFreeUrl(await fetchJson(`${FREE_BASE}/${encodeURIComponent(word.toLowerCase())}`));
-    if (url) return { url, source: 'free-dictionary' };
-  } catch {
-    // 都失败
   }
   return null;
 }
