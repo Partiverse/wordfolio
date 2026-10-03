@@ -2,7 +2,7 @@
   "expo": {
     "name": "Wordfolio",
     "slug": "wordfolio",
-    "version": "0.1.0-beta.10",
+    "version": "0.1.0-beta.11",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "wordfolio",
@@ -49,7 +49,13 @@
           }
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "color": "#f59e0b"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

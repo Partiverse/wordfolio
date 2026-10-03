@@ -47,6 +47,10 @@ async function bootstrap(): Promise<SQLite.SQLiteDatabase> {
     );
     CREATE INDEX IF NOT EXISTS idx_review_log_card ON review_log (stable_id, id DESC);
     CREATE INDEX IF NOT EXISTS idx_review_log_time ON review_log (reviewed_at DESC);
+    CREATE TABLE IF NOT EXISTS settings (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS daily_goal (
       day            TEXT PRIMARY KEY,
       target_count   INTEGER NOT NULL,
@@ -262,6 +266,25 @@ export async function getReviewHistory(days: number): Promise<{ day: string; cou
     [`-${days} days`],
   );
   return rows.map((r) => ({ day: r.day, count: r.n }));
+}
+
+/* ---------- 通用设置（key/value） ---------- */
+
+export async function getSetting(key: string): Promise<string | null> {
+  const db = await openLearningDb();
+  const row = await db.getFirstAsync<{ value: string }>(
+    'SELECT value FROM settings WHERE key = ?',
+    [key],
+  );
+  return row?.value ?? null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  const db = await openLearningDb();
+  await db.runAsync(
+    'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+    [key, value],
+  );
 }
 
 /* ---------- 每日目标 ---------- */
