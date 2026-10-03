@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import type { Grade } from 'ts-fsrs';
 
-import { VolumeIcon } from '@/components/icons';
+import { VolumeIcon, WarnIcon } from '@/components/icons';
 import { TtsBanner } from '@/components/TtsHint';
 import {
   bulkUpsertReviewCards,
   getDailyGoal,
   getReviewCards,
+  logReview,
   setDailyCompleted,
   upsertReviewCard,
 } from '@/db/study';
@@ -35,6 +37,7 @@ const SEED_BATCH = 20;
 export default function StudyScreen() {
   const t = useTheme();
   const styles = makeStyles(t);
+  const router = useRouter();
 
   const [queue, setQueue] = useState<StoredCard[]>([]);
   const [senses, setSenses] = useState<Map<string, StudySense>>(new Map());
@@ -73,6 +76,11 @@ export default function StudyScreen() {
         setCompleted(goal.completed);
         setQueue(spreadByHeadword(todayQueue, (c) => content.get(c.stableId)?.headword ?? c.stableId));
         setSenses(content);
+        // 批量预取：把整队前 10 个词头的音频 URL 提前拉好（错过的卡片点开即响）
+        for (const c of todayQueue.slice(0, 10)) {
+          const w = content.get(c.stableId)?.headword;
+          if (w) prefetchWordAudio(w);
+        }
       } catch (e) {
         if (alive) setError(String(e));
       } finally {
@@ -102,6 +110,7 @@ export default function StudyScreen() {
         const now = new Date();
         const next = gradeCard(current, grade, now);
         await upsertReviewCard(next);
+        await logReview(current.stableId, grade, next.due);
         const nextCompleted = completed + 1;
         await setDailyCompleted(todayKey(now), nextCompleted, target);
         setQueue((prev) => prev.slice(1));
@@ -129,7 +138,18 @@ export default function StudyScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.h1}>学习</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.h1}>学习</Text>
+          <Pressable
+            onPress={() => router.push('/wrong')}
+            style={styles.wrongBtn}
+            accessibilityRole="button"
+            accessibilityLabel="打开错题本"
+          >
+            <WarnIcon color={t.textSecondary} size={15} />
+            <Text style={styles.wrongBtnText}>错题本</Text>
+          </Pressable>
+        </View>
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
         </View>
@@ -258,6 +278,19 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: t.bgCanvas, paddingHorizontal: 16, paddingBottom: 12 },
     header: { paddingTop: 8, gap: 8, paddingBottom: 4 },
+    titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    wrongBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 10,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.border,
+      backgroundColor: t.bgSurface,
+    },
+    wrongBtnText: { color: t.textSecondary, fontSize: 13, fontWeight: '600' },
     h1: { fontSize: 26, fontWeight: '800', color: t.textPrimary },
     progressTrack: {
       height: 6,

@@ -3,8 +3,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FlameIcon, SparkIcon, StarIcon } from '@/components/icons';
-import { getDailyGoal, getStudyStats, setDailyTarget, type StudyStats } from '@/db/study';
-import { computeStreak, todayKey } from '@/study/stats-core';
+import { getDailyGoal, getReviewHistory, getStudyStats, setDailyTarget, type StudyStats } from '@/db/study';
+import { bucketHistory, computeStreak, todayKey } from '@/study/stats-core';
 import { useFavorites } from '@/stores/favorites';
 import { useTheme } from '@/theme/tokens';
 
@@ -15,6 +15,7 @@ export default function StatsScreen() {
   const styles = makeStyles(t);
 
   const [stats, setStats] = useState<StudyStats | null>(null);
+  const [history, setHistory] = useState<{ day: string; count: number }[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [target, setTarget] = useState(20);
   const [doneToday, setDoneToday] = useState(0);
@@ -27,10 +28,11 @@ export default function StatsScreen() {
   useEffect(() => {
     let alive = true;
     const day = todayKey(new Date());
-    Promise.all([getStudyStats(), getDailyGoal(day)])
-      .then(([s, goal]) => {
+    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7)])
+      .then(([s, goal, rows]) => {
         if (!alive) return;
         setStats(s);
+        setHistory(bucketHistory(rows, 7, day));
         setTarget(goal.target);
         setDoneToday(goal.completed);
       })
@@ -112,6 +114,32 @@ export default function StatsScreen() {
                 })}
               </View>
               <Text style={styles.cardHint}>明天起按新目标组队列；今天已复习的进度不变。</Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>近 7 日复习</Text>
+              <View style={styles.weekRow}>
+                {history.map((d) => {
+                  const max = Math.max(1, ...history.map((h) => h.count));
+                  return (
+                    <View key={d.day} style={styles.dayCol}>
+                      <Text style={styles.dayCount}>{d.count || ''}</Text>
+                      <View style={styles.dayBarTrack}>
+                        <View
+                          style={[
+                            styles.dayBar,
+                            {
+                              height: Math.max(4, (d.count / max) * 44),
+                              backgroundColor: d.count > 0 ? t.accentSuccess : t.bgSurfaceElevated,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.dayLabel}>{d.day.slice(8)}</Text>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
 
             <View style={styles.card}>
@@ -234,6 +262,12 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
     targetBtnActive: { backgroundColor: t.primary, borderColor: t.primary },
     targetText: { color: t.textSecondary, fontWeight: '700', fontSize: 15 },
     targetTextActive: { color: t.primaryForeground },
+    weekRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-end' },
+    dayCol: { flex: 1, alignItems: 'center', gap: 4 },
+    dayCount: { color: t.textSecondary, fontSize: 10, fontVariant: ['tabular-nums'] },
+    dayBarTrack: { height: 48, width: '70%', justifyContent: 'flex-end' },
+    dayBar: { width: '100%', borderRadius: 4 },
+    dayLabel: { color: t.textMuted, fontSize: 10 },
     barRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     barLabel: { color: t.textSecondary, fontSize: 13, width: 52 },
     barTrack: { flex: 1, height: 8, borderRadius: 999, backgroundColor: t.bgSurfaceElevated, overflow: 'hidden' },

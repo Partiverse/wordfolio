@@ -13,6 +13,7 @@ function icon(name: IconName) {
 
 export const StarIcon = icon('star');
 export const StarOutlineIcon = icon('star-outline');
+export const WarnIcon = icon('alert-circle-outline');
 export const VolumeIcon = icon('volume-medium-outline');
 export const ChevronBackIcon = icon('chevron-back');
 export const SearchIcon = icon('search');

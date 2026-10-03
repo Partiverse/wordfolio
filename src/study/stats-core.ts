@@ -25,3 +25,24 @@ function previousDay(day: string): string {
 export function todayKey(now: Date): string {
   return now.toISOString().slice(0, 10);
 }
+
+/**
+ * 把稀疏的逐日计数补成连续 N 天序列（今天在最后）：缺记录的日子补 0，
+ * 便于统计页画 7 日柱状图。
+ */
+export function bucketHistory(
+  rows: readonly { day: string; count: number }[],
+  days: number,
+  today: string,
+): { day: string; count: number }[] {
+  const map = new Map(rows.map((r) => [r.day, r.count]));
+  const out: { day: string; count: number }[] = [];
+  const base = new Date(`${today}T00:00:00.000Z`);
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    out.push({ day: key, count: map.get(key) ?? 0 });
+  }
+  return out;
+}

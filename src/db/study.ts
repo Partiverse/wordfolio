@@ -38,6 +38,15 @@ async function bootstrap(): Promise<SQLite.SQLiteDatabase> {
       url       TEXT NOT NULL,
       fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS review_log (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      stable_id  TEXT NOT NULL,
+      rating     INTEGER NOT NULL,   -- 1=Again 2=Hard 3=Good 4=Easy
+      due_after  TEXT NOT NULL,      -- 本次评分后的到期时间
+      reviewed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_review_log_card ON review_log (stable_id, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_review_log_time ON review_log (reviewed_at DESC);
     CREATE TABLE IF NOT EXISTS daily_goal (
       day            TEXT PRIMARY KEY,
       target_count   INTEGER NOT NULL,
@@ -185,6 +194,74 @@ export async function putAudioUrl(word: string, url: string): Promise<void> {
     'INSERT OR REPLACE INTO audio_cache (word, url) VALUES (?, ?)',
     [word, url],
   );
+}
+
+/* ---------- 复习日志与错题本 ---------- */
+
+/** 每次评分留痕（错题本与复习曲线的数据源；review_card 只存最新状态）。 */
+export async function logReview(stableId: string, rating: number, dueAfter: string): Promise<void> {
+  const db = await openLearningDb();
+  await db.runAsync(
+    'INSERT INTO review_log (stable_id, rating, due_after) VALUES (?, ?, ?)',
+    [stableId, rating, dueAfter],
+  );
+}
+
+export interface WrongBookItem {
+  stableId: string;
+  lastAgainAt: string;
+  reps: number;
+  lapses: number;
+  state: number;
+}
+
+/**
+ * 错题本：最近一次评分是「重来(1)」的义项（错题已订正即移出），
+ * 排除已稳固（Review 且 scheduled_days ≥ 21）。按最近出错时间倒序。
+ */
+export async function getWrongBook(limit = 50): Promise<WrongBookItem[]> {
+  const db = await openLearningDb();
+  const rows = await db.getAllAsync<{
+    stableId: string;
+    lastAgainAt: string;
+    reps: number;
+    lapses: number;
+    state: number;
+  }>(
+    `WITH latest AS (
+       SELECT stable_id, rating, reviewed_at,
+              ROW_NUMBER() OVER (PARTITION BY stable_id ORDER BY id DESC) AS rn
+         FROM review_log
+     )
+     SELECT l.stable_id AS stableId,
+            l.reviewed_at AS lastAgainAt,
+            rc.reps AS reps,
+            rc.lapses AS lapses,
+            rc.state AS state
+       FROM latest l
+       JOIN review_card rc ON rc.stable_id = l.stable_id
+      WHERE l.rn = 1
+        AND l.rating = 1
+        AND NOT (rc.state = 2 AND rc.scheduled_days >= 21)
+      ORDER BY l.reviewed_at DESC
+      LIMIT ?`,
+    [limit],
+  );
+  return rows;
+}
+
+/** 逐日复习次数（近 days 天，含无记录的日期由调用方补零）。 */
+export async function getReviewHistory(days: number): Promise<{ day: string; count: number }[]> {
+  const db = await openLearningDb();
+  const rows = await db.getAllAsync<{ day: string; n: number }>(
+    `SELECT substr(reviewed_at, 1, 10) AS day, COUNT(*) AS n
+       FROM review_log
+      WHERE reviewed_at >= date('now', ?)
+      GROUP BY day
+      ORDER BY day`,
+    [`-${days} days`],
+  );
+  return rows.map((r) => ({ day: r.day, count: r.n }));
 }
 
 /* ---------- 每日目标 ---------- */
