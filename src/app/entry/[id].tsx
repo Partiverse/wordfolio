@@ -8,7 +8,7 @@ import { ChevronBackIcon, StarIcon, StarOutlineIcon, VolumeIcon } from '@/compon
 import { TtsBanner } from '@/components/TtsHint';
 import { getEntryDetail, type EntryDetail } from '@/db/repository';
 import { useFavorites } from '@/stores/favorites';
-import { speakEn } from '@/utils/speech';
+import { playWordAudio } from '@/utils/wordAudio';
 import { useTheme } from '@/theme/tokens';
 
 export default function EntryDetailScreen() {
@@ -92,19 +92,19 @@ export default function EntryDetailScreen() {
                   <StarOutlineIcon color={t.textMuted} size={24} />
                 )}
               </Pressable>
-              <Pressable onPress={() => speakEn(entry.headword)} hitSlop={10} accessibilityLabel="朗读词头">
+              <Pressable onPress={() => void playWordAudio(entry.headword)} hitSlop={10} accessibilityLabel="播放词头发音">
                 <VolumeIcon color={t.textSecondary} size={22} />
               </Pressable>
             </View>
           </View>
           <View style={styles.badgeRow}>
             {entry.ipaBr ? (
-              <Pressable onPress={() => speakEn(entry.headword)} hitSlop={6}>
+              <Pressable onPress={() => void playWordAudio(entry.headword)} hitSlop={6}>
                 <Text style={styles.ipa}>英 /{entry.ipaBr}/</Text>
               </Pressable>
             ) : null}
             {entry.ipaAm ? (
-              <Pressable onPress={() => speakEn(entry.headword)} hitSlop={6}>
+              <Pressable onPress={() => void playWordAudio(entry.headword)} hitSlop={6}>
                 <Text style={styles.ipa}>美 /{entry.ipaAm}/</Text>
               </Pressable>
             ) : null}

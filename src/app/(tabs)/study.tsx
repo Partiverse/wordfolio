@@ -26,6 +26,7 @@ import {
 } from '@/study/fsrs-core';
 import { todayKey } from '@/study/stats-core';
 import { speakEn, speakZh } from '@/utils/speech';
+import { playWordAudio } from '@/utils/wordAudio';
 import { useTheme } from '@/theme/tokens';
 
 const DEFAULT_TARGET = 20;
@@ -156,10 +157,10 @@ export default function StudyScreen() {
             </View>
 
             <Pressable
-              onPress={() => speakEn(sense.headword)}
+              onPress={() => void playWordAudio(sense.headword)}
               style={styles.headRow}
               hitSlop={8}
-              accessibilityLabel="朗读词头"
+              accessibilityLabel="播放词头发音"
             >
               <Text style={styles.headword}>{sense.headword}</Text>
               <VolumeIcon color={t.textMuted} size={20} />

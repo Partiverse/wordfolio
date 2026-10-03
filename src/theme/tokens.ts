@@ -4,15 +4,15 @@
 import { useColorScheme } from 'react-native';
 
 export const lightTokens = {
-  // 基础中性色阶
-  bgCanvas: '#f8fafc',
+  // 基础中性色阶（画布用暖中性，与琥珀 brand 同一温度；表面积白）
+  bgCanvas: '#f8f6f2',
   bgSurface: '#ffffff',
-  bgSurfaceElevated: '#f1f5f9',
-  borderSubtle: '#e2e8f0',
-  borderStrong: '#cbd5e1',
-  textPrimary: '#0f172a',
-  textSecondary: '#475569',
-  textMuted: '#94a3b8',
+  bgSurfaceElevated: '#f1efe9',
+  borderSubtle: '#e7e4dd',
+  borderStrong: '#d6d2c9',
+  textPrimary: '#1c1917',
+  textSecondary: '#57534e',
+  textMuted: '#a8a29e',
 
   // shadcn/ui 语义代币（Amber 主色 + Taupe 中性色）
   background: '#f9f6f0',
@@ -44,35 +44,37 @@ export const lightTokens = {
 } as const;
 
 export const darkTokens = {
+  // 中性阶保持石板蓝夜色；brand 琥珀加亮以保对比度（4.5:1+ on #090d16）
   bgCanvas: '#090d16',
   bgSurface: '#111726',
   bgSurfaceElevated: '#182033',
   borderSubtle: '#1e293b',
   borderStrong: '#334155',
-  textPrimary: '#f8fafc',
-  textSecondary: '#94a3b8',
+  textPrimary: '#f1f5f9',
+  textSecondary: '#a2a9b8',
   textMuted: '#64748b',
 
   background: '#090d16',
-  foreground: '#f8fafc',
+  foreground: '#f1f5f9',
   card: '#111726',
-  cardForeground: '#f8fafc',
-  primary: '#f8fafc',
-  primaryForeground: '#090d16',
+  cardForeground: '#f1f5f9',
+  // 主行动色：暗色下保持琥珀 brand（beta.4 前是白色——正是「颜色不和谐」主因）
+  primary: '#f59e0b',
+  primaryForeground: '#1c1917',
   secondary: '#182033',
-  secondaryForeground: '#f8fafc',
+  secondaryForeground: '#f1f5f9',
   muted: '#182033',
   mutedForeground: '#94a3b8',
   accent: '#182033',
-  accentForeground: '#f8fafc',
-  destructive: '#7f1d1d',
-  destructiveForeground: '#f8fafc',
+  accentForeground: '#f1f5f9',
+  destructive: '#ef4444',
+  destructiveForeground: '#ffffff',
   border: '#1e293b',
   input: '#1e293b',
-  ring: '#38bdf8',
+  ring: '#f59e0b',
 
-  accentPrimary: '#38bdf8',
-  accentPrimaryHover: '#0284c7',
+  accentPrimary: '#7dd3fc',
+  accentPrimaryHover: '#38bdf8',
   accentSuccess: '#34d399',
   accentWarning: '#fbbf24',
 

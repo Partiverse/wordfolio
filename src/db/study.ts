@@ -33,6 +33,11 @@ async function bootstrap(): Promise<SQLite.SQLiteDatabase> {
       created_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_review_due ON review_card (due);
+    CREATE TABLE IF NOT EXISTS audio_cache (
+      word      TEXT PRIMARY KEY,
+      url       TEXT NOT NULL,
+      fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE IF NOT EXISTS daily_goal (
       day            TEXT PRIMARY KEY,
       target_count   INTEGER NOT NULL,
@@ -161,6 +166,25 @@ export async function bulkUpsertReviewCards(
       );
     }
   });
+}
+
+/* ---------- 发音缓存（真人语音 URL，见 utils/pronunciation.ts） ---------- */
+
+export async function getAudioUrl(word: string): Promise<string | null> {
+  const db = await openLearningDb();
+  const row = await db.getFirstAsync<{ url: string }>(
+    'SELECT url FROM audio_cache WHERE word = ?',
+    [word],
+  );
+  return row?.url ?? null;
+}
+
+export async function putAudioUrl(word: string, url: string): Promise<void> {
+  const db = await openLearningDb();
+  await db.runAsync(
+    'INSERT OR REPLACE INTO audio_cache (word, url) VALUES (?, ?)',
+    [word, url],
+  );
 }
 
 /* ---------- 每日目标 ---------- */
