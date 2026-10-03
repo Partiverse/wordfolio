@@ -52,7 +52,7 @@ function releasePlayer(player: AudioPlayer): void {
 
 export type PlayResult = 'audio' | 'tts' | 'failed';
 
-/** 播放词头发音：优先真人语音，加载超时/失败回退 TTS。返回实际来源供调试与埋点。 */
+/** 播放词头发音：优先真人语音，加载超时/失败回退 TTS。返回实际来源并打日志（现场排查「发音无效」）。 */
 export async function playWordAudio(word: string): Promise<PlayResult> {
   const resolved = await resolveAudioUrl(word).catch(() => null);
   if (resolved) {
@@ -63,19 +63,26 @@ export async function playWordAudio(word: string): Promise<PlayResult> {
       const loaded = await waitUntilLoaded(player);
       if (loaded) {
         player.play();
+        console.warn(`[audio] ${word} <- ${resolved.source}`);
         return 'audio';
       }
       releasePlayer(player);
       player = null;
-    } catch {
+      console.warn(`[audio] ${word} not loaded in ${READY_TIMEOUT_MS}ms, fallback tts`);
+    } catch (e) {
+      console.warn(`[audio] ${word} player error, fallback tts`, e);
       if (player) releasePlayer(player);
       player = null;
     }
+  } else {
+    console.warn(`[audio] ${word} no url resolved, fallback tts`);
   }
   try {
     speakEn(word);
+    console.warn(`[audio] ${word} <- tts`);
     return 'tts';
-  } catch {
+  } catch (e) {
+    console.warn(`[audio] ${word} tts failed`, e);
     return 'failed';
   }
 }

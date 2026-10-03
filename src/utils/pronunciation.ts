@@ -15,15 +15,25 @@ const MW_AUDIO_BASE = 'https://media.merriam-webster.com/audio/prons/en/us/mp3';
 const FREE_BASE = 'https://api.dictionaryapi.dev/api/v2/entries/en';
 const FETCH_TIMEOUT_MS = 5000;
 
-export type AudioSource = 'merriam-webster' | 'free-dictionary' | 'cache';
-
-const memoryCache = new Map<string, string | null>();
+// 注意：不能用 AbortSignal.timeout——Hermes 引擎未实现该 API，设备上会直接抛
+// TypeError，把两个音频源全部打死、静默回退到（可能不存在的）TTS，即内测反馈的
+// 「发音无效」。用 Promise.race + setTimeout 做 Hermes 兼容的超时。
+function timeoutGuard<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`timeout ${ms}ms`)), ms)),
+  ]);
+}
 
 async function fetchJson(url: string): Promise<unknown> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  const res = await timeoutGuard(fetch(url), FETCH_TIMEOUT_MS);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
+
+export type AudioSource = 'merriam-webster' | 'free-dictionary' | 'cache';
+
+const memoryCache = new Map<string, string | null>();
 
 /** 韦氏：取第一个带 audio 的 prs（美音真人读音）。 */
 function resolveMwUrl(payload: unknown): string | null {

@@ -149,7 +149,7 @@ function BackButton({
       accessibilityRole="button"
       accessibilityLabel="返回"
     >
-      <ChevronBackIcon color={t.accentPrimary} size={20} />
+      <ChevronBackIcon color={t.textSecondary} size={20} />
       <Text style={styles.backText}>返回</Text>
     </Pressable>
   );
@@ -160,7 +160,7 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
     safe: { flex: 1, backgroundColor: t.bgCanvas, paddingHorizontal: 16 },
     scroll: { paddingBottom: 32, gap: 12 },
     back: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', paddingVertical: 8 },
-    backText: { color: t.accentPrimary, fontSize: 15, fontWeight: '600' },
+    backText: { color: t.textSecondary, fontSize: 15, fontWeight: '600' },
     error: { color: t.destructive, fontSize: 14, marginTop: 24 },
     headerCard: {
       backgroundColor: t.bgSurface,
