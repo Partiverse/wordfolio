@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 import { FilterChips, type Chip } from '@/components/FilterChips';
 import { SearchIcon, StarIcon } from '@/components/icons';
@@ -128,6 +129,7 @@ export default function BrowseScreen() {
 
   const chips: Chip[] = useMemo(
     () => [
+      { label: '全部', value: null },
       { label: '收藏', value: '__fav__' },
       ...VISIBLE_POS.map((p) => ({ label: p, value: p })),
     ],
@@ -176,6 +178,16 @@ export default function BrowseScreen() {
           autoCorrect={false}
           returnKeyType="search"
         />
+        {query.length > 0 ? (
+          <Pressable
+            onPress={() => setQuery('')}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="清空搜索"
+          >
+            <Ionicons name="close-circle" size={18} color={t.textMuted} />
+          </Pressable>
+        ) : null}
       </View>
 
       <TtsBanner />

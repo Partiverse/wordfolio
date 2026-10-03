@@ -134,10 +134,17 @@ export default function StudyScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {finished ? (
-        <View style={styles.centerBox}>
-          <Text style={styles.doneTitle}>今天完成了</Text>
-          <Text style={styles.doneSub}>已复习 {completed} 个义项。明天再来，记忆曲线会安排下次出现时间。</Text>
-        </View>
+        completed > 0 ? (
+          <View style={styles.centerBox}>
+            <Text style={styles.doneTitle}>今天完成了</Text>
+            <Text style={styles.doneSub}>已复习 {completed} 个义项。明天再来，记忆曲线会安排下次出现时间。</Text>
+          </View>
+        ) : (
+          <View style={styles.centerBox}>
+            <Text style={styles.doneTitle}>今天没有到期的任务</Text>
+            <Text style={styles.doneSub}>已学的词还没到下次复习时间。可以去「词库」逛逛，或明天再来。</Text>
+          </View>
+        )
       ) : !sense ? (
         <ActivityIndicator color={t.primary} style={{ marginTop: 40 }} />
       ) : (

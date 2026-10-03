@@ -13,13 +13,13 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: t.primary,
         tabBarInactiveTintColor: t.textMuted,
+        // 不设固定 height/padding：交给 React Navigation 按系统手势区自适应，
+        // 否则 Android 手势条会压住 label（beta.3 实测「菜单栏显示不完整」）。
         tabBarStyle: {
           backgroundColor: t.bgSurface,
           borderTopColor: t.border,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 6,
         },
+        tabBarHideOnKeyboard: true,
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       }}
     >

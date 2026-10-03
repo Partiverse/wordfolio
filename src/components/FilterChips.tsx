@@ -1,6 +1,6 @@
-// 筛选 chips：内测反馈「筛选栏高度太窄」后重做——minHeight 40、字号 14、
-// 横向滚动带 padding，并让选中态只用 brand 一种色。
-import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+// 筛选 chips：beta.3 反馈「筛选区域宽度没有改变」——横向滚动会截断右侧 chip，
+// 改为 flexWrap 换行布局，全部 chip 一眼可见；点击已选中的 chip 即取消（回到「全部」）。
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '@/theme/tokens';
 
@@ -22,12 +22,7 @@ export function FilterChips({
   const styles = makeStyles(t);
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.scroll}
-      contentContainerStyle={styles.content}
-    >
+    <View style={styles.wrap}>
       {chips.map((chip) => {
         const selected = chip.value === active;
         return (
@@ -42,14 +37,17 @@ export function FilterChips({
           </Pressable>
         );
       })}
-    </ScrollView>
+    </View>
   );
 }
 
 function makeStyles(t: ReturnType<typeof useTheme>) {
   return StyleSheet.create({
-    scroll: { flexGrow: 0 },
-    content: { paddingVertical: 2, paddingRight: 16, gap: 8 },
+    wrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
     chip: {
       minHeight: 40,
       justifyContent: 'center',
