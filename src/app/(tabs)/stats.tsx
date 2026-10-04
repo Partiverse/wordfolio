@@ -8,9 +8,17 @@ import { getDailyGoal, getPracticeDaily, getPracticeTotal, getReviewHistory, get
 import { disableReminder, enableReminder, getReminderSetting, REMINDER_TIMES, type ReminderSetting } from '@/utils/reminders';
 import { bestStreak, bucketHistory, computeStreak, todayKey } from '@/study/stats-core';
 import { useFavorites } from '@/stores/favorites';
+import { useThemeStore } from '@/stores/theme';
 import { useTheme } from '@/theme/tokens';
+import type { ThemePreference } from '@/theme/theme-core';
 
 const TARGET_OPTIONS = [10, 20, 30, 50];
+
+const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
+  { value: 'light', label: '浅色' },
+  { value: 'dark', label: '深色' },
+  { value: 'system', label: '跟随系统' },
+];
 
 export default function StatsScreen() {
   const t = useTheme();
@@ -26,10 +34,14 @@ export default function StatsScreen() {
   const [target, setTarget] = useState(20);
   const [doneToday, setDoneToday] = useState(0);
   const { ids: favoriteIds, hydrate } = useFavorites();
+  const themePreference = useThemeStore((s) => s.preference);
+  const setThemePreference = useThemeStore((s) => s.setPreference);
+  const hydrateTheme = useThemeStore((s) => s.hydrate);
 
   useEffect(() => {
     void hydrate();
-  }, [hydrate]);
+    void hydrateTheme();
+  }, [hydrate, hydrateTheme]);
 
   useEffect(() => {
     let alive = true;
@@ -217,6 +229,24 @@ export default function StatsScreen() {
               <Text style={styles.cardTitle}>其他</Text>
               <Text style={styles.cardLine}>收藏词条：{favoriteIds.size}</Text>
               <Text style={styles.cardHint}>学习天数 {stats.activeDays.length} 天</Text>
+              <Text style={styles.cardHint}>外观</Text>
+              <View style={styles.targetRow}>
+                {THEME_OPTIONS.map((opt) => {
+                  const active = opt.value === themePreference;
+                  return (
+                    <Pressable
+                      key={opt.value}
+                      onPress={() => setThemePreference(opt.value)}
+                      style={[styles.targetBtn, active && styles.targetBtnActive]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.targetText, active && styles.targetTextActive]}>{opt.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={styles.cardHint}>「跟随系统」随设备深色模式变化；其余两项立即覆盖。</Text>
               <Pressable
                 style={styles.aboutRow}
                 onPress={() => router.push('/history')}

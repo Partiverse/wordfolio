@@ -3,6 +3,9 @@
 
 import { useColorScheme } from 'react-native';
 
+import { useThemeStore } from '@/stores/theme';
+import { resolveScheme } from '@/theme/theme-core';
+
 export const lightTokens = {
   // 基础中性色阶（画布用暖中性，与琥珀 brand 同一温度；表面积白）
   bgCanvas: '#f8f6f2',
@@ -95,8 +98,16 @@ export const spacing = (n: number) => n * 4;
  *   interactive（蓝）可点击文本：返回链接、筛选入口
  *   neutral        中性阶：卡片、边框、正文层级
  *   success（绿）   仅用于确切的「完成/正确」语义（进度条、完成页），不作装饰
+ *
+ * 主题来源（E4）：用户偏好（useThemeStore，settings 表 key='theme'）优先，
+ * light/dark 直接覆盖、system 回落系统色；水合完成前保持 'system'（无闪跳代价）。
  */
+export function useResolvedScheme(): 'light' | 'dark' {
+  const preference = useThemeStore((s) => s.preference);
+  const systemScheme = useColorScheme();
+  return resolveScheme(preference, systemScheme);
+}
+
 export function useTheme(): ThemeTokens {
-  const scheme = useColorScheme();
-  return scheme === 'dark' ? darkTokens : lightTokens;
+  return useResolvedScheme() === 'dark' ? darkTokens : lightTokens;
 }
