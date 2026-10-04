@@ -310,6 +310,23 @@ export async function getDistractorSenses(
   return rows;
 }
 
+// 上游富集数据探测（E5 接入骨架）：发布物是否带 CEFR 标注 / 例句数据。
+// UI 据此决定是否渲染预留槽位（词库 CEFR 筛选 chips、学习「例句挖空」入口）；
+// 显隐判定纯逻辑见 ../study/upstream-core.ts。当前 v0.1-m1 两项均无 → 槽位自动隐藏。
+export async function hasCefrData(): Promise<boolean> {
+  const db = await openReleaseDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM entry WHERE cefr IS NOT NULL AND cefr != ''",
+  );
+  return (row?.n ?? 0) > 0;
+}
+
+export async function hasExampleData(): Promise<boolean> {
+  const db = await openReleaseDb();
+  const row = await db.getFirstAsync<{ ok: number }>('SELECT 1 AS ok FROM example LIMIT 1');
+  return row?.ok === 1;
+}
+
 // 检索：拉丁走 FTS5 前缀 + bm25；中文（或含中文的混查）走 LIKE 回退。
 // 内测反馈「结果太多没意义」后的收紧策略（见 src/db/search.ts）：
 // ① 拉丁查询不足 2 字符直接拒（单字母前缀会命中海量）；中文单字仍可搜

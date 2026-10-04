@@ -18,9 +18,17 @@ import {
   setSetting,
   upsertReviewCard,
 } from '@/db/study';
-import { getDistractorSenses, getSeedSenseIds, getStudySenses, type StudySense } from '@/db/repository';
+import {
+  getDistractorSenses,
+  getSeedSenseIds,
+  getStudySenses,
+  hasCefrData,
+  hasExampleData,
+  type StudySense,
+} from '@/db/repository';
 import { pickPracticeRound, spreadByHeadword } from '@/study/queue';
 import { parseStudyMode, type StudyMode } from '@/study/mode-core';
+import { shouldShowBlankExercise } from '@/study/upstream-core';
 import {
   buildTodayQueue,
   GRADE_LABELS,
@@ -60,6 +68,25 @@ export default function StudyScreen() {
   const [practiceQueue, setPracticeQueue] = useState<StoredCard[]>([]);
   const [practiceIndex, setPracticeIndex] = useState(0);
   const PRACTICE_ROUND = 10;
+
+  // E5 上游接入骨架：探测发布物是否带例句 / CEFR 数据（v0.2 起才有），失败按无数据处理
+  const [upstream, setUpstream] = useState({ hasExample: false, hasCefr: false });
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const [hasExample, hasCefr] = await Promise.all([hasExampleData(), hasCefrData()]);
+        if (alive) setUpstream({ hasExample, hasCefr });
+      } catch {
+        // 探测失败 → 槽位保持隐藏，不阻断学习屏
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+  // 「例句挖空」chip 预留判定位：上游例句 + CEFR 数据到位才渲染，当前恒 false（自动隐藏）
+  const showBlankExercise = shouldShowBlankExercise(upstream.hasExample, upstream.hasCefr);
 
   // 每次聚焦都重建：统计页改目标/别处学了词，切回来立即生效
   useFocusEffect(
@@ -239,6 +266,13 @@ export default function StudyScreen() {
             >
               <Text style={[styles.modeChipText, mode === 'spell' && styles.modeChipTextActive]}>拼写</Text>
             </Pressable>
+            {showBlankExercise ? (
+              // M2-T08 实装位：上游例句数据到位后接入「例句挖空」模式切换与 QuizCard 挖空题型；
+              // 当前发布物无例句，此分支恒不渲染（chips 区与现状一致）
+              <Pressable style={styles.modeChip} accessibilityRole="button" accessibilityLabel="例句挖空">
+                <Text style={styles.modeChipText}>挖空</Text>
+              </Pressable>
+            ) : null}
           </View>
           <Pressable
             onPress={() => router.push('/wrong')}

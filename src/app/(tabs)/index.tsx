@@ -18,9 +18,17 @@ import { PlayToast } from '@/components/PlayToast';
 import { SearchIcon, StarIcon } from '@/components/icons';
 import { TtsBanner } from '@/components/TtsHint';
 import { WordCard } from '@/components/WordCard';
-import { browseEntries, searchSenses, type BrowseFilters, type BrowseItem } from '@/db/repository';
+import {
+  browseEntries,
+  searchSenses,
+  CEFR_OPTIONS,
+  hasCefrData,
+  type BrowseFilters,
+  type BrowseItem,
+} from '@/db/repository';
 import type { SearchHit } from '@/db/release';
 import { isTooShort } from '@/db/search';
+import { shouldShowCefrFilter } from '@/study/upstream-core';
 import { useFavorites } from '@/stores/favorites';
 import { useTheme } from '@/theme/tokens';
 
@@ -41,12 +49,25 @@ export default function BrowseScreen() {
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [pos, setPos] = useState<string | null>(null);
+  const [cefr, setCefr] = useState<string | null>(null);
   const [favOnly, setFavOnly] = useState(false);
+  // E5 上游接入骨架：发布物是否带 CEFR 标注（v0.2 起才有），探测失败按无数据处理
+  const [hasCefr, setHasCefr] = useState(false);
 
   const { ids: favoriteIds, hydrate, toggle } = useFavorites();
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    let alive = true;
+    hasCefrData()
+      .then((v) => alive && setHasCefr(v))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // null = 尚未加载（派生 loading）
   const [browse, setBrowse] = useState<BrowsePageState | null>(null);
@@ -67,10 +88,10 @@ export default function BrowseScreen() {
   }, [query]);
 
   // 筛选对象分别 memo，避免点星标之类无关状态触发浏览重载
-  const posFilters = useMemo<BrowseFilters>(() => ({ pos }), [pos]);
+  const posFilters = useMemo<BrowseFilters>(() => ({ cefr, pos }), [cefr, pos]);
   const favFilters = useMemo<BrowseFilters>(
-    () => ({ entryIds: [...favoriteIds], pos }),
-    [favoriteIds, pos],
+    () => ({ entryIds: [...favoriteIds], cefr, pos }),
+    [favoriteIds, cefr, pos],
   );
   const filters = favOnly ? favFilters : posFilters;
 
@@ -128,21 +149,30 @@ export default function BrowseScreen() {
       });
   }, [searching, total, filters]);
 
+  // CEFR chips 仅在发布物确有 CEFR 标注时渲染（v0.1-m1 无标注 → chips 区与现状一致）
+  const showCefrChips = shouldShowCefrFilter(hasCefr);
   const chips: Chip[] = useMemo(
     () => [
       { label: '全部', value: null },
       { label: '收藏', value: '__fav__' },
       ...VISIBLE_POS.map((p) => ({ label: p, value: p })),
+      ...(showCefrChips ? CEFR_OPTIONS.map((c) => ({ label: c, value: c })) : []),
     ],
-    [],
+    [showCefrChips],
   );
-  const activeChip = favOnly ? '__fav__' : pos;
+  const activeChip = favOnly ? '__fav__' : (pos ?? cefr);
   const onChipChange = useCallback((value: string | null) => {
     if (value === '__fav__') {
       setFavOnly(true);
       return;
     }
     setFavOnly(false);
+    if (value && (CEFR_OPTIONS as readonly string[]).includes(value)) {
+      setCefr(value);
+      setPos(null);
+      return;
+    }
+    setCefr(null);
     setPos(value);
   }, []);
 
