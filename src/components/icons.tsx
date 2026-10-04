@@ -24,3 +24,5 @@ export const BookIcon = icon('book-outline');
 export const SparkIcon = icon('sparkles-outline');
 export const TrophyIcon = icon('trophy-outline');
 export const PencilIcon = icon('pencil-outline');
+export const SaveIcon = icon('save-outline'); // 导出学习数据到本机文件
+export const DownloadIcon = icon('download-outline'); // 从本机备份文件导入

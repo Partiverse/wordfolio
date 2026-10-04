@@ -1,5 +1,17 @@
 // 学习库读写：收藏（既有）+ FSRS 卡片状态（M-B）。均为设备端可写数据，与只读发布物分离。
+// 备份导出/导入的归并纯逻辑见 ../study/merge-core.ts（E1）。
 import * as SQLite from 'expo-sqlite';
+
+import {
+  parseBackup,
+  planMerge,
+  type DailyGoalRow,
+  type FavoriteRow,
+  type ReviewCardRow,
+  type ReviewLogRow,
+  type SettingRow,
+} from '../study/merge-core';
+import { BUNDLED_EDITION } from './release';
 
 const DB_NAME = 'learning.db';
 
@@ -373,5 +385,129 @@ export async function getStudyStats(): Promise<StudyStats> {
       relearning: count(3),
     },
     solidCount: solid?.n ?? 0,
+  };
+}
+
+/* ---------- 学习数据备份：导出 / 导入（切片 E1） ---------- */
+
+/** 导出五表全量（favorite / review_card / review_log / daily_goal / settings）为 JSON 字符串，
+ *  顶层带 exportedAt 与 edition（取发布物 BUNDLED_EDITION）。 */
+export async function exportLearningData(): Promise<string> {
+  const db = await openLearningDb();
+  const favorite = await db.getAllAsync<FavoriteRow>(
+    'SELECT entry_id, created_at FROM favorite ORDER BY created_at, entry_id',
+  );
+  const review_card = await db.getAllAsync<ReviewCardRow>(
+    `SELECT stable_id, due, stability, difficulty, elapsed_days, scheduled_days,
+            learning_steps, reps, lapses, state, last_review, created_at
+       FROM review_card ORDER BY stable_id`,
+  );
+  const review_log = await db.getAllAsync<ReviewLogRow>(
+    'SELECT stable_id, rating, due_after, reviewed_at, kind FROM review_log ORDER BY id',
+  );
+  const daily_goal = await db.getAllAsync<DailyGoalRow>(
+    'SELECT day, target_count, completed_count FROM daily_goal ORDER BY day',
+  );
+  const settings = await db.getAllAsync<SettingRow>('SELECT key, value FROM settings ORDER BY key');
+
+  return JSON.stringify({
+    exportedAt: new Date().toISOString(),
+    edition: BUNDLED_EDITION,
+    data: { favorite, review_card, review_log, daily_goal, settings },
+  });
+}
+
+export interface ImportTableCount {
+  imported: number;
+  skipped: number;
+}
+
+export interface ImportResult {
+  edition: string;
+  exportedAt: string;
+  counts: {
+    favorite: ImportTableCount;
+    review_card: ImportTableCount;
+    review_log: ImportTableCount;
+    daily_goal: ImportTableCount;
+    settings: ImportTableCount;
+  };
+}
+
+/** 导入备份 JSON：畸形/结构非法在解析层（parseBackup）抛出、由 UI 调用方捕获；
+ *  四张有主键的表按「跳过已存在主键」合并（favorite=entry_id / review_card=stable_id /
+ *  daily_goal=day / settings=key）；review_log 无业务主键（id 自增），全量追加不查重。 */
+export async function importLearningData(json: string): Promise<ImportResult> {
+  const payload = parseBackup(json);
+  const db = await openLearningDb();
+
+  const favIds = await db.getAllAsync<{ entry_id: number }>('SELECT entry_id FROM favorite');
+  const cardIds = await db.getAllAsync<{ stable_id: string }>('SELECT stable_id FROM review_card');
+  const goalDays = await db.getAllAsync<{ day: string }>('SELECT day FROM daily_goal');
+  const settingKeys = await db.getAllAsync<{ key: string }>('SELECT key FROM settings');
+
+  const favPlan = planMerge(payload.data.favorite, new Set(favIds.map((r) => r.entry_id)), (r) => r.entry_id);
+  const cardPlan = planMerge(payload.data.review_card, new Set(cardIds.map((r) => r.stable_id)), (r) => r.stable_id);
+  const goalPlan = planMerge(payload.data.daily_goal, new Set(goalDays.map((r) => r.day)), (r) => r.day);
+  const settingPlan = planMerge(payload.data.settings, new Set(settingKeys.map((r) => r.key)), (r) => r.key);
+
+  const logRows = payload.data.review_log;
+  await db.withTransactionAsync(async () => {
+    for (const row of favPlan.toWrite) {
+      // planMerge 已排除主键冲突，用裸 INSERT：意外冲突直接报错而非静默覆盖
+      await db.runAsync('INSERT INTO favorite (entry_id, created_at) VALUES (?, ?)', [
+        row.entry_id,
+        row.created_at,
+      ]);
+    }
+    for (const row of cardPlan.toWrite) {
+      await db.runAsync(
+        `INSERT INTO review_card
+           (stable_id, due, stability, difficulty, elapsed_days, scheduled_days,
+            learning_steps, reps, lapses, state, last_review, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          row.stable_id,
+          row.due,
+          row.stability,
+          row.difficulty,
+          row.elapsed_days,
+          row.scheduled_days,
+          row.learning_steps,
+          row.reps,
+          row.lapses,
+          row.state,
+          row.last_review,
+          row.created_at,
+        ],
+      );
+    }
+    for (const row of logRows) {
+      await db.runAsync(
+        'INSERT INTO review_log (stable_id, rating, due_after, reviewed_at, kind) VALUES (?, ?, ?, ?, ?)',
+        [row.stable_id, row.rating, row.due_after, row.reviewed_at, row.kind],
+      );
+    }
+    for (const row of goalPlan.toWrite) {
+      await db.runAsync(
+        'INSERT INTO daily_goal (day, target_count, completed_count) VALUES (?, ?, ?)',
+        [row.day, row.target_count, row.completed_count],
+      );
+    }
+    for (const row of settingPlan.toWrite) {
+      await db.runAsync('INSERT INTO settings (key, value) VALUES (?, ?)', [row.key, row.value]);
+    }
+  });
+
+  return {
+    edition: payload.edition,
+    exportedAt: payload.exportedAt,
+    counts: {
+      favorite: { imported: favPlan.toWrite.length, skipped: favPlan.skipped },
+      review_card: { imported: cardPlan.toWrite.length, skipped: cardPlan.skipped },
+      review_log: { imported: logRows.length, skipped: 0 },
+      daily_goal: { imported: goalPlan.toWrite.length, skipped: goalPlan.skipped },
+      settings: { imported: settingPlan.toWrite.length, skipped: settingPlan.skipped },
+    },
   };
 }
