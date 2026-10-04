@@ -16,6 +16,7 @@ export const StarOutlineIcon = icon('star-outline');
 export const WarnIcon = icon('alert-circle-outline');
 export const VolumeIcon = icon('volume-medium-outline');
 export const ChevronBackIcon = icon('chevron-back');
+export const ChevronForwardIcon = icon('chevron-forward');
 export const SearchIcon = icon('search');
 export const FlameIcon = icon('flame-outline');
 export const StatsIcon = icon('stats-chart-outline');

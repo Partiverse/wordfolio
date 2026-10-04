@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 
-import { FlameIcon, PencilIcon, SparkIcon, StarIcon, TrophyIcon } from '@/components/icons';
+import { ChevronForwardIcon, FlameIcon, PencilIcon, SparkIcon, StarIcon, TrophyIcon } from '@/components/icons';
 import { getDailyGoal, getPracticeTotal, getReviewHistory, getStudyStats, setDailyTarget, type StudyStats } from '@/db/study';
 import { disableReminder, enableReminder, getReminderSetting, REMINDER_TIMES, type ReminderSetting } from '@/utils/reminders';
 import { bestStreak, bucketHistory, computeStreak, todayKey } from '@/study/stats-core';
@@ -230,6 +231,15 @@ export default function StatsScreen() {
               <Text style={styles.cardTitle}>其他</Text>
               <Text style={styles.cardLine}>收藏词条：{favoriteIds.size}</Text>
               <Text style={styles.cardHint}>学习天数 {stats.activeDays.length} 天</Text>
+              <Pressable
+                style={styles.aboutRow}
+                onPress={() => router.push('/about')}
+                accessibilityRole="button"
+                accessibilityLabel="关于 Wordfolio"
+              >
+                <Text style={styles.aboutText}>关于 Wordfolio</Text>
+                <ChevronForwardIcon color={t.textMuted} size={16} />
+              </Pressable>
             </View>
           </>
         )}
@@ -324,6 +334,14 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
     cardTitle: { color: t.textPrimary, fontSize: 15, fontWeight: '700' },
     cardHint: { color: t.textMuted, fontSize: 12, lineHeight: 18 },
     cardLine: { color: t.textSecondary, fontSize: 14 },
+    aboutRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      minHeight: 44,
+      marginTop: 2,
+    },
+    aboutText: { color: t.accentPrimary, fontSize: 14, fontWeight: '600' },
     targetRow: { flexDirection: 'row', gap: 10 },
     targetBtn: {
       flex: 1,

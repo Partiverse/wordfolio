@@ -31,6 +31,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="entry/[id]" />
         <Stack.Screen name="wrong" />
+        <Stack.Screen name="about" />
         <Stack.Screen name="spike" />
       </Stack>
       <StatusBar style={dark ? 'light' : 'dark'} />
