@@ -9,7 +9,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { resolveBootstrapAction } from './upgrade';
 
 // 与 assets/db/wordfolio.db 同步手工维护；发版脚本生成时改由脚本注入
-export const BUNDLED_EDITION = 'v0.1-m1';
+export const BUNDLED_EDITION = 'v0.2';
 
 const DB_NAME = 'wordfolio.db';
 

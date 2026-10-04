@@ -26,7 +26,7 @@ import {
   type BrowseFilters,
   type BrowseItem,
 } from '@/db/repository';
-import type { SearchHit } from '@/db/release';
+import { BUNDLED_EDITION, type SearchHit } from '@/db/release';
 import { isTooShort } from '@/db/search';
 import { shouldShowCefrFilter } from '@/study/upstream-core';
 import { useFavorites } from '@/stores/favorites';
@@ -186,7 +186,7 @@ export default function BrowseScreen() {
               ? `${hits?.length ?? 0} 条结果`
               : favOnly
                 ? `${browse?.total ?? 0} 条收藏`
-                : `${browse?.total ?? 0} 词 · v0.1-m1`}
+                : `${browse?.total ?? 0} 词 · ${BUNDLED_EDITION}`}
           </Text>
         </View>
         {favoriteIds.size > 0 ? (

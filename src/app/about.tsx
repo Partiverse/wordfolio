@@ -117,6 +117,7 @@ export default function AboutScreen() {
           ) : (
             <Text style={styles.pendingText}>加载中…</Text>
           )}
+          <Text style={styles.cardHint}>例句来自 Tatoeba（CC-BY 4.0）</Text>
         </View>
 
         <View style={styles.card}>
