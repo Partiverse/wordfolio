@@ -22,6 +22,26 @@ function previousDay(day: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+function nextDay(day: string): string {
+  const d = new Date(`${day}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** 历史最长连续学习天数（全史纪录，区别于 computeStreak 的「当前连续」）。入参无需有序、可含重复。 */
+export function bestStreak(activeDays: readonly string[]): number {
+  const days = [...new Set(activeDays)].sort();
+  let best = 0;
+  let run = 0;
+  let prev: string | null = null;
+  for (const day of days) {
+    run = prev !== null && nextDay(prev) === day ? run + 1 : 1;
+    if (run > best) best = run;
+    prev = day;
+  }
+  return best;
+}
+
 export function todayKey(now: Date): string {
   return now.toISOString().slice(0, 10);
 }

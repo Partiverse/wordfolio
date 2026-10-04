@@ -2,10 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { FlameIcon, SparkIcon, StarIcon } from '@/components/icons';
-import { getDailyGoal, getReviewHistory, getStudyStats, setDailyTarget, type StudyStats } from '@/db/study';
+import { FlameIcon, PencilIcon, SparkIcon, StarIcon, TrophyIcon } from '@/components/icons';
+import { getDailyGoal, getPracticeTotal, getReviewHistory, getStudyStats, setDailyTarget, type StudyStats } from '@/db/study';
 import { disableReminder, enableReminder, getReminderSetting, REMINDER_TIMES, type ReminderSetting } from '@/utils/reminders';
-import { bucketHistory, computeStreak, todayKey } from '@/study/stats-core';
+import { bestStreak, bucketHistory, computeStreak, todayKey } from '@/study/stats-core';
 import { useFavorites } from '@/stores/favorites';
 import { useTheme } from '@/theme/tokens';
 
@@ -17,6 +17,7 @@ export default function StatsScreen() {
 
   const [stats, setStats] = useState<StudyStats | null>(null);
   const [history, setHistory] = useState<{ day: string; count: number }[]>([]);
+  const [practiceTotal, setPracticeTotal] = useState(0);
   const [reminder, setReminder] = useState<ReminderSetting | null>(null);
   const [reminderBusy, setReminderBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -31,12 +32,13 @@ export default function StatsScreen() {
   useEffect(() => {
     let alive = true;
     const day = todayKey(new Date());
-    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting()])
-      .then(([s, goal, rows, rem]) => {
+    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting(), getPracticeTotal()])
+      .then(([s, goal, rows, rem, practices]) => {
         if (!alive) return;
         setStats(s);
         setHistory(bucketHistory(rows, 7, day));
         setReminder(rem);
+        setPracticeTotal(practices);
         setTarget(goal.target);
         setDoneToday(goal.completed);
       })
@@ -56,6 +58,7 @@ export default function StatsScreen() {
   }, []);
 
   const streak = stats ? computeStreak(stats.activeDays, todayKey(new Date())) : 0;
+  const best = stats ? bestStreak(stats.activeDays) : 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -82,6 +85,20 @@ export default function StatsScreen() {
                 value={String(streak)}
                 suffix="天"
                 icon={<FlameIcon color={t.textMuted} size={16} />}
+              />
+            </View>
+            <View style={styles.row}>
+              <StatTile
+                label="最长连续"
+                value={String(best)}
+                suffix="天"
+                icon={<TrophyIcon color={t.textMuted} size={16} />}
+              />
+              <StatTile
+                label="自由练习"
+                value={String(practiceTotal)}
+                suffix="次"
+                icon={<PencilIcon color={t.textMuted} size={16} />}
               />
             </View>
             <View style={styles.row}>

@@ -21,3 +21,5 @@ export const FlameIcon = icon('flame-outline');
 export const StatsIcon = icon('stats-chart-outline');
 export const BookIcon = icon('book-outline');
 export const SparkIcon = icon('sparkles-outline');
+export const TrophyIcon = icon('trophy-outline');
+export const PencilIcon = icon('pencil-outline');

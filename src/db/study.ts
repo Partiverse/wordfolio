@@ -265,6 +265,15 @@ export async function getWrongBook(limit = 50): Promise<WrongBookItem[]> {
   return rows;
 }
 
+/** 自由练习累计次数（review_log 中 kind='practice' 的总条数，不动排期的练习/听音/拼写）。 */
+export async function getPracticeTotal(): Promise<number> {
+  const db = await openLearningDb();
+  const row = await db.getFirstAsync<{ total: number }>(
+    `SELECT COUNT(*) AS total FROM review_log WHERE kind = 'practice'`,
+  );
+  return row?.total ?? 0;
+}
+
 /** 逐日复习次数（近 days 天，含无记录的日期由调用方补零）。 */
 export async function getReviewHistory(days: number): Promise<{ day: string; count: number }[]> {
   const db = await openLearningDb();

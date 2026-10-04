@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bucketHistory, computeStreak, todayKey } from '../src/study/stats-core';
+import { bestStreak, bucketHistory, computeStreak, todayKey } from '../src/study/stats-core';
 
 describe('computeStreak', () => {
   it('returns 0 with no history', () => {
@@ -25,6 +25,28 @@ describe('computeStreak', () => {
 
   it('handles month boundaries', () => {
     expect(computeStreak(['2026-08-30', '2026-08-31', '2026-09-01'], '2026-09-01')).toBe(3);
+  });
+});
+
+describe('bestStreak', () => {
+  it('returns 0 with empty history', () => {
+    expect(bestStreak([])).toBe(0);
+  });
+
+  it('returns 1 for a single day', () => {
+    expect(bestStreak(['2026-09-29'])).toBe(1);
+  });
+
+  it('counts the full consecutive run across multiple days', () => {
+    expect(bestStreak(['2026-09-27', '2026-09-28', '2026-09-29'])).toBe(3);
+  });
+
+  it('keeps the longest run when a gap splits the history', () => {
+    expect(bestStreak(['2026-09-01', '2026-09-02', '2026-09-10', '2026-09-11', '2026-09-12'])).toBe(3);
+  });
+
+  it('handles month boundaries', () => {
+    expect(bestStreak(['2026-08-30', '2026-08-31', '2026-09-01'])).toBe(3);
   });
 });
 
