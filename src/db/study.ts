@@ -336,6 +336,20 @@ export async function getReviewHistory(days: number): Promise<{ day: string; cou
   return rows.map((r) => ({ day: r.day, count: r.n }));
 }
 
+/** 逐日自由练习次数（kind='practice'，即练习/听音/拼写的不动排期作答；形状同 getReviewHistory，缺日由调用方补零）。 */
+export async function getPracticeDaily(days: number): Promise<{ day: string; count: number }[]> {
+  const db = await openLearningDb();
+  const rows = await db.getAllAsync<{ day: string; n: number }>(
+    `SELECT substr(reviewed_at, 1, 10) AS day, COUNT(*) AS n
+       FROM review_log
+      WHERE kind = 'practice' AND reviewed_at >= date('now', ?)
+      GROUP BY day
+      ORDER BY day`,
+    [`-${days} days`],
+  );
+  return rows.map((r) => ({ day: r.day, count: r.n }));
+}
+
 /* ---------- 通用设置（key/value） ---------- */
 
 export async function getSetting(key: string): Promise<string | null> {

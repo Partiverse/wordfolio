@@ -12,12 +12,15 @@ import {
   bulkUpsertReviewCards,
   getDailyGoal,
   getReviewCards,
+  getSetting,
   logReview,
   setDailyCompleted,
+  setSetting,
   upsertReviewCard,
 } from '@/db/study';
 import { getDistractorSenses, getSeedSenseIds, getStudySenses, type StudySense } from '@/db/repository';
 import { pickPracticeRound, spreadByHeadword } from '@/study/queue';
+import { parseStudyMode, type StudyMode } from '@/study/mode-core';
 import {
   buildTodayQueue,
   GRADE_LABELS,
@@ -35,6 +38,8 @@ import { useTheme } from '@/theme/tokens';
 
 const DEFAULT_TARGET = 20;
 const SEED_BATCH = 20;
+// 学习模式记忆（settings 表 key='studyMode'，E3）：切模式即写入，聚焦重建时恢复
+const STUDY_MODE_KEY = 'studyMode';
 
 export default function StudyScreen() {
   const t = useTheme();
@@ -49,7 +54,7 @@ export default function StudyScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
-  const [mode, setMode] = useState<'flip' | 'choice' | 'listen' | 'spell'>('flip');
+  const [mode, setMode] = useState<StudyMode>('flip');
   const [distractors, setDistractors] = useState<StudySense[]>([]);
   // 自由练习（练习/听音/拼写）：独立于卡片正式队列，只记 review_log 不动 FSRS 排期
   const [practiceQueue, setPracticeQueue] = useState<StoredCard[]>([]);
@@ -64,6 +69,9 @@ export default function StudyScreen() {
         try {
           const now = new Date();
           const day = todayKey(now);
+          // 恢复上次使用的学习模式（无效值回退「卡片」）；失败不阻断队列重建
+          const savedMode = parseStudyMode(await getSetting(STUDY_MODE_KEY).catch(() => null));
+          setMode(savedMode);
           const goal = await getDailyGoal(day);
           const stored = await getReviewCards();
           const dueCount = stored.filter((c) => isDue(c, now)).length;
@@ -135,6 +143,12 @@ export default function StudyScreen() {
     };
   }, [quizMode, currentPos, currentStableId]);
 
+  // 切模式即记忆：写入 settings，下次聚焦恢复；落库失败静默（本次会话内仍生效）
+  const changeMode = useCallback((next: StudyMode) => {
+    setMode(next);
+    void setSetting(STUDY_MODE_KEY, next).catch(() => {});
+  }, []);
+
   const rate = useCallback(
     async (grade: Grade) => {
       if (!current || busy) return;
@@ -195,7 +209,7 @@ export default function StudyScreen() {
             <Text style={styles.h1}>学习</Text>
             <Pressable
               style={[styles.modeChip, mode === 'flip' && styles.modeChipActive]}
-              onPress={() => setMode('flip')}
+              onPress={() => changeMode('flip')}
               accessibilityRole="button"
               accessibilityState={{ selected: mode === 'flip' }}
             >
@@ -203,7 +217,7 @@ export default function StudyScreen() {
             </Pressable>
             <Pressable
               style={[styles.modeChip, mode === 'choice' && styles.modeChipActive]}
-              onPress={() => setMode('choice')}
+              onPress={() => changeMode('choice')}
               accessibilityRole="button"
               accessibilityState={{ selected: mode === 'choice' }}
             >
@@ -211,7 +225,7 @@ export default function StudyScreen() {
             </Pressable>
             <Pressable
               style={[styles.modeChip, mode === 'listen' && styles.modeChipActive]}
-              onPress={() => setMode('listen')}
+              onPress={() => changeMode('listen')}
               accessibilityRole="button"
               accessibilityState={{ selected: mode === 'listen' }}
             >
@@ -219,7 +233,7 @@ export default function StudyScreen() {
             </Pressable>
             <Pressable
               style={[styles.modeChip, mode === 'spell' && styles.modeChipActive]}
-              onPress={() => setMode('spell')}
+              onPress={() => changeMode('spell')}
               accessibilityRole="button"
               accessibilityState={{ selected: mode === 'spell' }}
             >

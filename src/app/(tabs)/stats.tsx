@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { ChevronForwardIcon, FlameIcon, PencilIcon, SparkIcon, StarIcon, TrophyIcon } from '@/components/icons';
-import { getDailyGoal, getPracticeTotal, getReviewHistory, getStudyStats, setDailyTarget, type StudyStats } from '@/db/study';
+import { getDailyGoal, getPracticeDaily, getPracticeTotal, getReviewHistory, getStudyStats, setDailyTarget, type StudyStats } from '@/db/study';
 import { disableReminder, enableReminder, getReminderSetting, REMINDER_TIMES, type ReminderSetting } from '@/utils/reminders';
 import { bestStreak, bucketHistory, computeStreak, todayKey } from '@/study/stats-core';
 import { useFavorites } from '@/stores/favorites';
@@ -18,6 +18,7 @@ export default function StatsScreen() {
 
   const [stats, setStats] = useState<StudyStats | null>(null);
   const [history, setHistory] = useState<{ day: string; count: number }[]>([]);
+  const [practiceHistory, setPracticeHistory] = useState<{ day: string; count: number }[]>([]);
   const [practiceTotal, setPracticeTotal] = useState(0);
   const [reminder, setReminder] = useState<ReminderSetting | null>(null);
   const [reminderBusy, setReminderBusy] = useState(false);
@@ -33,11 +34,12 @@ export default function StatsScreen() {
   useEffect(() => {
     let alive = true;
     const day = todayKey(new Date());
-    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting(), getPracticeTotal()])
-      .then(([s, goal, rows, rem, practices]) => {
+    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting(), getPracticeTotal(), getPracticeDaily(7)])
+      .then(([s, goal, rows, rem, practices, practiceRows]) => {
         if (!alive) return;
         setStats(s);
         setHistory(bucketHistory(rows, 7, day));
+        setPracticeHistory(bucketHistory(practiceRows, 7, day));
         setReminder(rem);
         setPracticeTotal(practices);
         setTarget(goal.target);
@@ -140,28 +142,12 @@ export default function StatsScreen() {
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>近 7 日复习</Text>
-              <View style={styles.weekRow}>
-                {history.map((d) => {
-                  const max = Math.max(1, ...history.map((h) => h.count));
-                  return (
-                    <View key={d.day} style={styles.dayCol}>
-                      <Text style={styles.dayCount}>{d.count || ''}</Text>
-                      <View style={styles.dayBarTrack}>
-                        <View
-                          style={[
-                            styles.dayBar,
-                            {
-                              height: Math.max(4, (d.count / max) * 44),
-                              backgroundColor: d.count > 0 ? t.accentSuccess : t.bgSurfaceElevated,
-                            },
-                          ]}
-                        />
-                      </View>
-                      <Text style={styles.dayLabel}>{d.day.slice(8)}</Text>
-                    </View>
-                  );
-                })}
-              </View>
+              <WeekBars rows={history} activeColor={t.accentSuccess} />
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>近 7 日自由练习</Text>
+              <WeekBars rows={practiceHistory} activeColor={t.accentWarning} />
             </View>
 
             <View style={styles.card}>
@@ -285,6 +271,34 @@ function StatTile({
         {value}
         <Text style={styles.tileSuffix}> {suffix}</Text>
       </Text>
+    </View>
+  );
+}
+
+/** 近 N 日逐日柱状（复习与自由练习两卡共用；缺日已由 bucketHistory 补零，0 值画空槽）。 */
+function WeekBars({ rows, activeColor }: { rows: { day: string; count: number }[]; activeColor: string }) {
+  const t = useTheme();
+  const styles = makeStyles(t);
+  const max = Math.max(1, ...rows.map((h) => h.count));
+  return (
+    <View style={styles.weekRow}>
+      {rows.map((d) => (
+        <View key={d.day} style={styles.dayCol}>
+          <Text style={styles.dayCount}>{d.count || ''}</Text>
+          <View style={styles.dayBarTrack}>
+            <View
+              style={[
+                styles.dayBar,
+                {
+                  height: Math.max(4, (d.count / max) * 44),
+                  backgroundColor: d.count > 0 ? activeColor : t.bgSurfaceElevated,
+                },
+              ]}
+            />
+          </View>
+          <Text style={styles.dayLabel}>{d.day.slice(8)}</Text>
+        </View>
+      ))}
     </View>
   );
 }
