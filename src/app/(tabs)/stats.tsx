@@ -233,6 +233,15 @@ export default function StatsScreen() {
               <Text style={styles.cardHint}>学习天数 {stats.activeDays.length} 天</Text>
               <Pressable
                 style={styles.aboutRow}
+                onPress={() => router.push('/history')}
+                accessibilityRole="button"
+                accessibilityLabel="复习历史"
+              >
+                <Text style={styles.aboutText}>复习历史</Text>
+                <ChevronForwardIcon color={t.textMuted} size={16} />
+              </Pressable>
+              <Pressable
+                style={styles.aboutRow}
                 onPress={() => router.push('/about')}
                 accessibilityRole="button"
                 accessibilityLabel="关于 Wordfolio"

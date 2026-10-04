@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bestStreak, bucketHistory, computeStreak, todayKey } from '../src/study/stats-core';
+import { bestStreak, bucketHistory, computeStreak, formatReviewTime, todayKey } from '../src/study/stats-core';
 
 describe('computeStreak', () => {
   it('returns 0 with no history', () => {
@@ -53,6 +53,26 @@ describe('bestStreak', () => {
 describe('todayKey', () => {
   it('formats as YYYY-MM-DD in UTC', () => {
     expect(todayKey(new Date('2026-09-29T23:59:59.000Z'))).toBe('2026-09-29');
+  });
+});
+
+describe('formatReviewTime', () => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const local = (isoUtc: string) => {
+    const d = new Date(isoUtc);
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  it('parses SQLite UTC datetime and renders local MM-DD HH:mm', () => {
+    expect(formatReviewTime('2026-10-04 03:05:00')).toBe(local('2026-10-04T03:05:00Z'));
+  });
+
+  it('drops seconds', () => {
+    expect(formatReviewTime('2026-10-04 03:05:59')).toBe(local('2026-10-04T03:05:59Z'));
+  });
+
+  it('returns the input unchanged when it is not a valid datetime', () => {
+    expect(formatReviewTime('not-a-time')).toBe('not-a-time');
   });
 });
 

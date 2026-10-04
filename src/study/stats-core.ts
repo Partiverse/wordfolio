@@ -47,6 +47,17 @@ export function todayKey(now: Date): string {
 }
 
 /**
+ * SQLite datetime('now') 存的是 UTC「YYYY-MM-DD HH:MM:SS」，
+ * 按本地时区渲染成「MM-DD HH:mm」（复习历史明细用）；解析失败原样返回。
+ */
+export function formatReviewTime(utc: string): string {
+  const d = new Date(`${utc.replace(' ', 'T')}Z`);
+  if (Number.isNaN(d.getTime())) return utc;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
  * 把稀疏的逐日计数补成连续 N 天序列（今天在最后）：缺记录的日子补 0，
  * 便于统计页画 7 日柱状图。
  */

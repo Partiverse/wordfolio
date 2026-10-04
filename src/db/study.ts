@@ -286,6 +286,42 @@ export async function getPracticeTotal(): Promise<number> {
   return row?.total ?? 0;
 }
 
+/** 单条复习记录（复习历史页明细列表用）。 */
+export interface RecentReview {
+  stableId: string;
+  /** 1=Again 2=Hard 3=Good 4=Easy */
+  rating: number;
+  /** 本次评分后的到期时间 */
+  dueAfter: string;
+  /** SQLite datetime('now') 格式（UTC「YYYY-MM-DD HH:MM:SS」） */
+  reviewedAt: string;
+  /** review=正式学习（动排期）/ practice=自由练习（不动排期） */
+  kind: 'review' | 'practice';
+}
+
+/** 最近若干条复习记录（id 倒序 = 时间倒序，同一秒内按写入顺序稳定倒排）。 */
+export async function getRecentReviews(limit: number): Promise<RecentReview[]> {
+  const db = await openLearningDb();
+  const rows = await db.getAllAsync<{
+    stableId: string;
+    rating: number;
+    dueAfter: string;
+    reviewedAt: string;
+    kind: 'review' | 'practice';
+  }>(
+    `SELECT stable_id AS stableId,
+            rating      AS rating,
+            due_after   AS dueAfter,
+            reviewed_at AS reviewedAt,
+            kind        AS kind
+       FROM review_log
+      ORDER BY id DESC
+      LIMIT ?`,
+    [limit],
+  );
+  return rows;
+}
+
 /** 逐日复习次数（近 days 天，含无记录的日期由调用方补零）。 */
 export async function getReviewHistory(days: number): Promise<{ day: string; count: number }[]> {
   const db = await openLearningDb();
