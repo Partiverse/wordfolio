@@ -43,7 +43,8 @@ async function bootstrap(): Promise<SQLite.SQLiteDatabase> {
       stable_id  TEXT NOT NULL,
       rating     INTEGER NOT NULL,   -- 1=Again 2=Hard 3=Good 4=Easy
       due_after  TEXT NOT NULL,      -- 本次评分后的到期时间
-      reviewed_at TEXT NOT NULL DEFAULT (datetime('now'))
+      reviewed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      kind       TEXT NOT NULL DEFAULT 'review'  -- review=正式学习（动排期）/ practice=自由练习（不动排期）
     );
     CREATE INDEX IF NOT EXISTS idx_review_log_card ON review_log (stable_id, id DESC);
     CREATE INDEX IF NOT EXISTS idx_review_log_time ON review_log (reviewed_at DESC);
@@ -57,6 +58,10 @@ async function bootstrap(): Promise<SQLite.SQLiteDatabase> {
       completed_count INTEGER NOT NULL DEFAULT 0
     );
   `);
+  // 旧库迁移：review_log 建表时无 kind 列（beta.15 及之前），补列；已存在则忽略
+  await db
+    .execAsync('ALTER TABLE review_log ADD COLUMN kind TEXT NOT NULL DEFAULT \'review\'')
+    .catch(() => {});
   return db;
 }
 
@@ -202,12 +207,18 @@ export async function putAudioUrl(word: string, url: string): Promise<void> {
 
 /* ---------- 复习日志与错题本 ---------- */
 
-/** 每次评分留痕（错题本与复习曲线的数据源；review_card 只存最新状态）。 */
-export async function logReview(stableId: string, rating: number, dueAfter: string): Promise<void> {
+/** 每次评分留痕（错题本与复习曲线的数据源；review_card 只存最新状态）。
+ *  kind='review' 正式学习（卡片模式，动 FSRS 排期）；'practice' 自由练习（不动排期）。 */
+export async function logReview(
+  stableId: string,
+  rating: number,
+  dueAfter: string,
+  kind: 'review' | 'practice' = 'review',
+): Promise<void> {
   const db = await openLearningDb();
   await db.runAsync(
-    'INSERT INTO review_log (stable_id, rating, due_after) VALUES (?, ?, ?)',
-    [stableId, rating, dueAfter],
+    'INSERT INTO review_log (stable_id, rating, due_after, kind) VALUES (?, ?, ?, ?)',
+    [stableId, rating, dueAfter, kind],
   );
 }
 

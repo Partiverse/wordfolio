@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import type { Grade } from 'ts-fsrs';
 
 import { VolumeIcon, WarnIcon } from '@/components/icons';
@@ -17,7 +17,7 @@ import {
   upsertReviewCard,
 } from '@/db/study';
 import { getDistractorSenses, getSeedSenseIds, getStudySenses, type StudySense } from '@/db/repository';
-import { spreadByHeadword } from '@/study/queue';
+import { pickPracticeRound, spreadByHeadword } from '@/study/queue';
 import {
   buildTodayQueue,
   GRADE_LABELS,
@@ -51,54 +51,68 @@ export default function StudyScreen() {
   const [ready, setReady] = useState(false);
   const [mode, setMode] = useState<'flip' | 'choice' | 'listen' | 'spell'>('flip');
   const [distractors, setDistractors] = useState<StudySense[]>([]);
+  // 自由练习（练习/听音/拼写）：独立于卡片正式队列，只记 review_log 不动 FSRS 排期
+  const [practiceQueue, setPracticeQueue] = useState<StoredCard[]>([]);
+  const [practiceIndex, setPracticeIndex] = useState(0);
+  const PRACTICE_ROUND = 10;
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const now = new Date();
-        const day = todayKey(now);
-        const goal = await getDailyGoal(day);
-        const stored = await getReviewCards();
-        const dueCount = stored.filter((c) => isDue(c, now)).length;
+  // 每次聚焦都重建：统计页改目标/别处学了词，切回来立即生效
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      (async () => {
+        try {
+          const now = new Date();
+          const day = todayKey(now);
+          const goal = await getDailyGoal(day);
+          const stored = await getReviewCards();
+          const dueCount = stored.filter((c) => isDue(c, now)).length;
 
-        let all = stored;
-        if (dueCount < goal.target) {
-          const existing = new Set(stored.map((c) => c.stableId));
-          const candidates = (await getSeedSenseIds(goal.target * 4)).filter((id) => !existing.has(id));
-          const need = Math.max(goal.target - dueCount, SEED_BATCH);
-          const fresh = candidates.slice(0, need).map((id) => newCard(id, now));
-          if (fresh.length) {
-            await bulkUpsertReviewCards(fresh);
-            all = [...stored, ...fresh];
+          let all = stored;
+          if (dueCount < goal.target) {
+            const existing = new Set(stored.map((c) => c.stableId));
+            const candidates = (await getSeedSenseIds(goal.target * 4)).filter((id) => !existing.has(id));
+            const need = Math.max(goal.target - dueCount, SEED_BATCH);
+            const fresh = candidates.slice(0, need).map((id) => newCard(id, now));
+            if (fresh.length) {
+              await bulkUpsertReviewCards(fresh);
+              all = [...stored, ...fresh];
+            }
           }
+          const todayQueue = buildTodayQueue(all, goal.target, now);
+          const content = await getStudySenses(todayQueue.map((c) => c.stableId));
+          if (!alive) return;
+          setTarget(goal.target);
+          setCompleted(goal.completed);
+          setQueue(spreadByHeadword(todayQueue, (c) => content.get(c.stableId)?.headword ?? c.stableId));
+          setSenses(content);
+          // 自由练习轮：从已学卡随机抽（与正式排期无关，每轮不同）
+          setPracticeQueue(pickPracticeRound(all, PRACTICE_ROUND));
+          setPracticeIndex(0);
+          // 批量预取：把整队前 10 个词头的音频 URL 提前拉好（错过的卡片点开即响）
+          for (const c of todayQueue.slice(0, 10)) {
+            const w = content.get(c.stableId)?.headword;
+            if (w) prefetchWordAudio(w);
+          }
+        } catch (e) {
+          if (alive) setError(String(e));
+        } finally {
+          if (alive) setReady(true);
         }
-        const todayQueue = buildTodayQueue(all, goal.target, now);
-        const content = await getStudySenses(todayQueue.map((c) => c.stableId));
-        if (!alive) return;
-        setTarget(goal.target);
-        setCompleted(goal.completed);
-        setQueue(spreadByHeadword(todayQueue, (c) => content.get(c.stableId)?.headword ?? c.stableId));
-        setSenses(content);
-        // 批量预取：把整队前 10 个词头的音频 URL 提前拉好（错过的卡片点开即响）
-        for (const c of todayQueue.slice(0, 10)) {
-          const w = content.get(c.stableId)?.headword;
-          if (w) prefetchWordAudio(w);
-        }
-      } catch (e) {
-        if (alive) setError(String(e));
-      } finally {
-        if (alive) setReady(true);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+      })();
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
 
   const current = queue[0];
   const sense = current ? senses.get(current.stableId) : undefined;
   const progress = useMemo(() => queueProgress(completed, target), [completed, target]);
+
+  // 自由练习（练习/听音/拼写）：独立于卡片正式队列
+  const practiceCurrent = practiceQueue[practiceIndex] ?? null;
+  const practiceSense = practiceCurrent ? senses.get(practiceCurrent.stableId) : undefined;
 
   // 当前卡亮出即预取真人发音（URL 缓存），点喇叭时几乎零等待
   const headword = sense?.headword;
@@ -106,9 +120,9 @@ export default function StudyScreen() {
     if (headword) prefetchWordAudio(headword);
   }, [headword]);
 
-  // 练习/听音模式：为当前卡取同词性干扰项
-  const currentPos = sense?.pos ?? null;
-  const currentStableId = current?.stableId ?? null;
+  // 练习/听音/拼写模式：为当前练习卡取同词性干扰项
+  const currentPos = practiceSense?.pos ?? null;
+  const currentStableId = practiceCurrent?.stableId ?? null;
   const quizMode = mode !== 'flip';
   useEffect(() => {
     if (!quizMode || !currentPos || !currentStableId) return;
@@ -144,11 +158,21 @@ export default function StudyScreen() {
     [current, busy, completed, target],
   );
 
-  const answerQuiz = useCallback(
+  // 练习/听音/拼写：只记 review_log（kind='practice'），不动 FSRS 排期与今日进度——
+  // 四种方式相互独立：卡片答完/没答都不影响自由练习，反之亦然
+  const answerPractice = useCallback(
     (correct: boolean) => {
-      void rate(correct ? 3 : 1);
+      if (!practiceCurrent || busy) return;
+      setBusy(true);
+      try {
+        const now = new Date();
+        void logReview(practiceCurrent.stableId, correct ? 3 : 1, now.toISOString(), 'practice');
+        setPracticeIndex((i) => i + 1);
+      } finally {
+        setBusy(false);
+      }
     },
-    [rate],
+    [practiceCurrent, busy],
   );
 
   if (!ready) {
@@ -159,7 +183,9 @@ export default function StudyScreen() {
     );
   }
 
-  const finished = queue.length === 0;
+  const flipFinished = queue.length === 0;
+  // 自由练习本轮完成（10 题答完）：可无限再来一轮
+  const practiceFinished = practiceIndex >= practiceQueue.length && practiceQueue.length > 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -214,13 +240,41 @@ export default function StudyScreen() {
           <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
         </View>
         <Text style={styles.progressText}>
-          今日 {completed}/{target} · 剩 {queue.length}
+          {quizMode
+            ? `本轮 ${practiceIndex}/${practiceQueue.length || PRACTICE_ROUND} · 自由练习`
+            : `今日 ${completed}/${target} · 剩 ${queue.length}`}
         </Text>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {finished ? (
+      {quizMode ? (
+        practiceFinished ? (
+          <View style={styles.centerBox}>
+            <Text style={styles.doneTitle}>本轮练习完成</Text>
+            <Text style={styles.doneSub}>
+              已练 {practiceQueue.length} 个义项（自由练习不计入今日进度、不影响排期）。
+            </Text>
+            <Pressable style={styles.revealBtn} onPress={() => setPracticeIndex(0)} accessibilityRole="button">
+              <Text style={styles.revealBtnText}>再来一轮</Text>
+            </Pressable>
+          </View>
+        ) : practiceSense ? (
+          <ScrollView contentContainerStyle={styles.cardArea}>
+            <QuizCard
+              key={practiceSense.stableId}
+              sense={practiceSense}
+              pool={distractors}
+              onAnswer={answerPractice}
+              busy={busy}
+              variant={mode === 'spell' ? 'spell' : mode === 'listen' ? 'listen' : 'meaning'}
+            />
+            <TtsBanner />
+          </ScrollView>
+        ) : (
+          <ActivityIndicator color={t.primary} style={{ marginTop: 40 }} />
+        )
+      ) : flipFinished ? (
         completed > 0 ? (
           <View style={styles.centerBox}>
             <Text style={styles.doneTitle}>今天完成了</Text>
@@ -229,24 +283,10 @@ export default function StudyScreen() {
         ) : (
           <View style={styles.centerBox}>
             <Text style={styles.doneTitle}>今天没有到期的任务</Text>
-            <Text style={styles.doneSub}>已学的词还没到下次复习时间。可以去「词库」逛逛，或明天再来。</Text>
+            <Text style={styles.doneSub}>已学的词还没到下次复习时间。可以去「词库」逛逛，或切「练习」继续。</Text>
           </View>
         )
-      ) : !sense ? (
-        <ActivityIndicator color={t.primary} style={{ marginTop: 40 }} />
-      ) : quizMode ? (
-        <ScrollView contentContainerStyle={styles.cardArea}>
-          <QuizCard
-            key={sense.stableId}
-            sense={sense}
-            pool={distractors}
-            onAnswer={answerQuiz}
-            busy={busy}
-            variant={mode === 'spell' ? 'spell' : mode === 'listen' ? 'listen' : 'meaning'}
-          />
-          <TtsBanner />
-        </ScrollView>
-      ) : (
+      ) : sense ? (
         <ScrollView contentContainerStyle={styles.cardArea}>
           <Pressable style={styles.card} onPress={() => setRevealed(true)} accessibilityRole="button">
             <View style={styles.cardTop}>
@@ -315,9 +355,9 @@ export default function StudyScreen() {
 
           <TtsBanner />
         </ScrollView>
-      )}
+      ) : null}
 
-      {!finished && sense && mode === 'flip' ? (
+      {!quizMode && !flipFinished && sense && mode === 'flip' ? (
         <View style={styles.gradeRow}>
           {revealed
             ? GRADES.map((g) => (
@@ -337,7 +377,7 @@ export default function StudyScreen() {
         </View>
       ) : null}
 
-      {!finished && sense && mode === 'flip' && !revealed ? (
+      {!quizMode && !flipFinished && sense && mode === 'flip' && !revealed ? (
         <Pressable style={[styles.revealBtn]} onPress={() => setRevealed(true)} accessibilityRole="button">
           <Text style={styles.revealBtnText}>显示释义</Text>
         </Pressable>
