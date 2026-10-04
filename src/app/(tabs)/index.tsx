@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { FilterChips, type Chip } from '@/components/FilterChips';
+import { PlayToast } from '@/components/PlayToast';
 import { SearchIcon, StarIcon } from '@/components/icons';
 import { TtsBanner } from '@/components/TtsHint';
 import { WordCard } from '@/components/WordCard';
@@ -239,6 +240,7 @@ export default function BrowseScreen() {
           }
         />
       )}
+      <PlayToast />
     </SafeAreaView>
   );
 }

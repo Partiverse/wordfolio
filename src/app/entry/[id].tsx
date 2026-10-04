@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { SenseCard } from '@/components/SenseCard';
 import { ChevronBackIcon, StarIcon, StarOutlineIcon, VolumeIcon } from '@/components/icons';
+import { PlayToast } from '@/components/PlayToast';
 import { TtsBanner } from '@/components/TtsHint';
 import { getEntryDetail, type EntryDetail } from '@/db/repository';
 import { useFavorites } from '@/stores/favorites';
@@ -131,6 +132,8 @@ export default function EntryDetailScreen() {
         </View>
 
         <TtsBanner />
+
+        <PlayToast />
       </ScrollView>
     </SafeAreaView>
   );

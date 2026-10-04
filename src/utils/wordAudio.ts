@@ -8,6 +8,7 @@ import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-aud
 
 import { resolveAudioUrl, type AudioSource } from './pronunciation';
 import { speakEn } from './speech';
+import { usePlayStatus } from '@/stores/playStatus';
 
 let modeReady = false;
 
@@ -57,8 +58,9 @@ function releasePlayer(player: AudioPlayer): void {
 
 export type PlayResult = 'audio' | 'tts' | 'failed';
 
-/** 播放词头发音：优先真人语音，加载超时/失败回退 TTS。返回实际来源并打日志（现场排查「发音无效」）。 */
+/** 播放词头发音：优先真人语音，加载超时/失败回退 TTS。每层结果显式浮出（见 stores/playStatus）。 */
 export async function playWordAudio(word: string): Promise<PlayResult> {
+  const { show } = usePlayStatus.getState();
   const resolved = await resolveAudioUrl(word).catch(() => null);
   if (resolved) {
     let player: AudioPlayer | null = null;
@@ -73,13 +75,16 @@ export async function playWordAudio(word: string): Promise<PlayResult> {
       }
       releasePlayer(player);
       player = null;
+      show('在线发音加载超时，改用合成音');
       console.warn(`[audio] ${word} not loaded in ${READY_TIMEOUT_MS}ms, fallback tts`);
     } catch (e) {
+      show('在线发音播放失败，改用合成音');
       console.warn(`[audio] ${word} player error, fallback tts`, e);
       if (player) releasePlayer(player);
       player = null;
     }
   } else {
+    show('在线发音不可达，改用合成音');
     console.warn(`[audio] ${word} no url resolved, fallback tts`);
   }
   try {
@@ -87,6 +92,7 @@ export async function playWordAudio(word: string): Promise<PlayResult> {
     console.warn(`[audio] ${word} <- tts`);
     return 'tts';
   } catch (e) {
+    show('无法发音：这台设备没有语音引擎，且在线发音不可达');
     console.warn(`[audio] ${word} tts failed`, e);
     return 'failed';
   }

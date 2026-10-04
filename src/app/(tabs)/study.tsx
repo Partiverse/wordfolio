@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import type { Grade } from 'ts-fsrs';
 
 import { VolumeIcon, WarnIcon } from '@/components/icons';
+import { PlayToast } from '@/components/PlayToast';
 import { QuizCard } from '@/components/QuizCard';
 import { TtsBanner } from '@/components/TtsHint';
 import {
@@ -341,6 +342,8 @@ export default function StudyScreen() {
           <Text style={styles.revealBtnText}>显示释义</Text>
         </Pressable>
       ) : null}
+
+      <PlayToast />
     </SafeAreaView>
   );
 }

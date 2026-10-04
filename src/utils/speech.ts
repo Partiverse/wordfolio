@@ -1,9 +1,10 @@
 // TTS 点读（expo-speech）。
-// 实测坑（beta.2 内测反馈「发音无效」）：`Speech.speak()` 返回 void，出错不抛异常、
-// 也没有回调——设备缺 TTS 引擎或对应语言包时完全静默。因此这里做两件事：
-// 1) 启动时探测可用语音，缺引擎/语言包时给出可见提示而不是死按钮；
-// 2) speak 前先 stop，避免连续点击排队导致的卡顿感。
+// 实测坑：`Speech.speak()` 返回 void，出错不抛异常——设备缺 TTS 引擎时完全静默。
+// 因此：朗读前探测引擎，缺失时经 playStatus 显式提示（不再空转静默）；
+// speak 前先 stop，避免连续点击排队导致的卡顿感。
 import * as Speech from 'expo-speech';
+
+import { usePlayStatus } from '@/stores/playStatus';
 
 export type SpeechLang = 'en-US' | 'zh-CN';
 
@@ -24,9 +25,22 @@ export function probeVoices(): Promise<Record<SpeechLang, boolean>> {
 
 export function speak(text: string, lang: SpeechLang): void {
   if (!text) return;
-  // 打断上一条再念，避免多次点击后语音排队滞后
-  Speech.stop().catch(() => {});
-  Speech.speak(text, { language: lang, rate: lang === 'zh-CN' ? 0.95 : 0.9 });
+  void (async () => {
+    const voices = await probeVoices();
+    if (!voices[lang]) {
+      usePlayStatus
+        .getState()
+        .show(
+          lang === 'zh-CN'
+            ? '这台设备没有中文语音引擎，无法朗读释义'
+            : '这台设备没有英文语音引擎，无法朗读',
+        );
+      return;
+    }
+    // 打断上一条再念，避免多次点击后语音排队滞后
+    Speech.stop().catch(() => {});
+    Speech.speak(text, { language: lang, rate: lang === 'zh-CN' ? 0.95 : 0.9 });
+  })();
 }
 
 export function speakEn(text: string): void {
