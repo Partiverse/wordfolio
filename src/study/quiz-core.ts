@@ -55,3 +55,25 @@ export function shuffle<T>(items: readonly T[]): T[] {
   }
   return out;
 }
+
+/**
+ * 拼写归一（拼写听写判分用）：
+ * 小写化 → 去首尾空白 → 合并连续空格 → 去掉撇号/连字符/句点
+ * （让 "Mother-In-Law" / "mother in law." / "mothers" 这类常见输入都算对）
+ */
+export function normalizeSpelling(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/[‘’']/g, '')
+    .replace(/[-.]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** 拼写听写判分：空输入算未作答（交给 UI 决定是否阻止提交）。 */
+export function isSpellingCorrect(input: string, target: string): boolean {
+  const a = normalizeSpelling(input);
+  if (a.length === 0) return false;
+  return a === normalizeSpelling(target);
+}

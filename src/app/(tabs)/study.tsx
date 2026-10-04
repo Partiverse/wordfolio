@@ -48,7 +48,7 @@ export default function StudyScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
-  const [mode, setMode] = useState<'flip' | 'choice' | 'listen'>('flip');
+  const [mode, setMode] = useState<'flip' | 'choice' | 'listen' | 'spell'>('flip');
   const [distractors, setDistractors] = useState<StudySense[]>([]);
 
   useEffect(() => {
@@ -108,7 +108,7 @@ export default function StudyScreen() {
   // 练习/听音模式：为当前卡取同词性干扰项
   const currentPos = sense?.pos ?? null;
   const currentStableId = current?.stableId ?? null;
-  const quizMode = mode === 'choice' || mode === 'listen';
+  const quizMode = mode !== 'flip';
   useEffect(() => {
     if (!quizMode || !currentPos || !currentStableId) return;
     let alive = true;
@@ -190,6 +190,14 @@ export default function StudyScreen() {
             >
               <Text style={[styles.modeChipText, mode === 'listen' && styles.modeChipTextActive]}>听音</Text>
             </Pressable>
+            <Pressable
+              style={[styles.modeChip, mode === 'spell' && styles.modeChipActive]}
+              onPress={() => setMode('spell')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: mode === 'spell' }}
+            >
+              <Text style={[styles.modeChipText, mode === 'spell' && styles.modeChipTextActive]}>拼写</Text>
+            </Pressable>
           </View>
           <Pressable
             onPress={() => router.push('/wrong')}
@@ -233,7 +241,7 @@ export default function StudyScreen() {
             pool={distractors}
             onAnswer={answerQuiz}
             busy={busy}
-            variant={mode === 'listen' ? 'listen' : 'meaning'}
+            variant={mode === 'spell' ? 'spell' : mode === 'listen' ? 'listen' : 'meaning'}
           />
           <TtsBanner />
         </ScrollView>

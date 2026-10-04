@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildChoice, senseOptionText, shuffle, type QuizSense } from '../src/study/quiz-core';
+import {
+  buildChoice,
+  isSpellingCorrect,
+  normalizeSpelling,
+  senseOptionText,
+  shuffle,
+  type QuizSense,
+} from '../src/study/quiz-core';
 
 const sense = (id: string, headword: string, labelZh: string | null, definitionZh: string): QuizSense => ({
   stableId: id,
@@ -74,5 +81,31 @@ describe('shuffle', () => {
     const src = [1, 2, 3];
     shuffle(src);
     expect(src).toEqual([1, 2, 3]);
+  });
+});
+
+describe('normalizeSpelling', () => {
+  it('lowercases, trims and collapses spaces', () => {
+    expect(normalizeSpelling('  Run   FAST ')).toBe('run fast');
+  });
+
+  it('strips apostrophes, hyphens and periods', () => {
+    expect(normalizeSpelling("mother-in-law")).toBe('mother in law');
+    expect(normalizeSpelling("don't")).toBe('dont');
+    expect(normalizeSpelling('run.')).toBe('run');
+  });
+});
+
+describe('isSpellingCorrect', () => {
+  it('accepts case/space/hyphen variants', () => {
+    expect(isSpellingCorrect('Run', 'run')).toBe(true);
+    expect(isSpellingCorrect('  run  ', 'run')).toBe(true);
+    expect(isSpellingCorrect('mother-in-law', 'mother in law')).toBe(true);
+  });
+
+  it('rejects wrong words and empty input', () => {
+    expect(isSpellingCorrect('ran', 'run')).toBe(false);
+    expect(isSpellingCorrect('', 'run')).toBe(false);
+    expect(isSpellingCorrect('   ', 'run')).toBe(false);
   });
 });
