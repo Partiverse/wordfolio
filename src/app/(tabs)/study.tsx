@@ -48,7 +48,7 @@ export default function StudyScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
-  const [mode, setMode] = useState<'flip' | 'choice'>('flip');
+  const [mode, setMode] = useState<'flip' | 'choice' | 'listen'>('flip');
   const [distractors, setDistractors] = useState<StudySense[]>([]);
 
   useEffect(() => {
@@ -105,11 +105,12 @@ export default function StudyScreen() {
     if (headword) prefetchWordAudio(headword);
   }, [headword]);
 
-  // 练习模式：为当前卡取同词性干扰项
+  // 练习/听音模式：为当前卡取同词性干扰项
   const currentPos = sense?.pos ?? null;
   const currentStableId = current?.stableId ?? null;
+  const quizMode = mode === 'choice' || mode === 'listen';
   useEffect(() => {
-    if (mode !== 'choice' || !currentPos || !currentStableId) return;
+    if (!quizMode || !currentPos || !currentStableId) return;
     let alive = true;
     getDistractorSenses(currentPos, currentStableId, 9)
       .then((rows) => alive && setDistractors(rows))
@@ -117,7 +118,7 @@ export default function StudyScreen() {
     return () => {
       alive = false;
     };
-  }, [mode, currentPos, currentStableId]);
+  }, [quizMode, currentPos, currentStableId]);
 
   const rate = useCallback(
     async (grade: Grade) => {
@@ -181,6 +182,14 @@ export default function StudyScreen() {
             >
               <Text style={[styles.modeChipText, mode === 'choice' && styles.modeChipTextActive]}>练习</Text>
             </Pressable>
+            <Pressable
+              style={[styles.modeChip, mode === 'listen' && styles.modeChipActive]}
+              onPress={() => setMode('listen')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: mode === 'listen' }}
+            >
+              <Text style={[styles.modeChipText, mode === 'listen' && styles.modeChipTextActive]}>听音</Text>
+            </Pressable>
           </View>
           <Pressable
             onPress={() => router.push('/wrong')}
@@ -216,7 +225,7 @@ export default function StudyScreen() {
         )
       ) : !sense ? (
         <ActivityIndicator color={t.primary} style={{ marginTop: 40 }} />
-      ) : mode === 'choice' ? (
+      ) : quizMode ? (
         <ScrollView contentContainerStyle={styles.cardArea}>
           <QuizCard
             key={sense.stableId}
@@ -224,6 +233,7 @@ export default function StudyScreen() {
             pool={distractors}
             onAnswer={answerQuiz}
             busy={busy}
+            variant={mode === 'listen' ? 'listen' : 'meaning'}
           />
           <TtsBanner />
         </ScrollView>

@@ -1,21 +1,29 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { VolumeIcon } from '@/components/icons';
 import { buildChoice, type ChoiceQuestion, type QuizSense } from '@/study/quiz-core';
+import { playWordAudio } from '@/utils/wordAudio';
 import { useTheme } from '@/theme/tokens';
 
-// 练习卡（义项四选一）：给词头+词性，选正确的中文释义。
+export type QuizVariant = 'meaning' | 'listen';
+
+// 练习卡：
+//   meaning = 四选一（给词头选释义）
+//   listen  = 听音辨义（藏词头，播发音后选释义）——同一套选项，只换呈现
 // 答对自动以 Good 计分，答错展示正确项并以 Again 计分（由父层 grade 回调落地）。
 export function QuizCard({
   sense,
   pool,
   onAnswer,
   busy,
+  variant = 'meaning',
 }: {
   sense: QuizSense;
   pool: readonly QuizSense[];
   onAnswer: (correct: boolean) => void;
   busy: boolean;
+  variant?: QuizVariant;
 }) {
   const t = useTheme();
   const styles = makeStyles(t);
@@ -25,6 +33,12 @@ export function QuizCard({
   const [picked, setPicked] = useState<string | null>(null);
 
   const answered = picked !== null;
+  const listening = variant === 'listen';
+
+  // 听音模式：卡片亮出即播一次（用户思考时已在放），可点重播
+  useEffect(() => {
+    if (listening) void playWordAudio(sense.headword);
+  }, [listening, sense.headword]);
 
   const pick = (stableId: string) => {
     if (answered || busy) return;
@@ -38,9 +52,23 @@ export function QuizCard({
     <View style={styles.card}>
       <View style={styles.cardTop}>
         <Text style={styles.pos}>{sense.pos}</Text>
-        <Text style={styles.mode}>选择正确释义</Text>
+        <Text style={styles.mode}>{listening ? '听发音选释义' : '选择正确释义'}</Text>
       </View>
-      <Text style={styles.headword}>{sense.headword}</Text>
+
+      {listening ? (
+        <Pressable
+          style={styles.listenBtn}
+          onPress={() => void playWordAudio(sense.headword)}
+          disabled={answered || busy}
+          accessibilityRole="button"
+          accessibilityLabel="重播发音"
+        >
+          <VolumeIcon color={t.primaryForeground} size={34} />
+          <Text style={styles.listenText}>点击重播</Text>
+        </Pressable>
+      ) : (
+        <Text style={styles.headword}>{sense.headword}</Text>
+      )}
 
       <View style={styles.options}>
         {question.options.map((opt) => {
@@ -107,6 +135,15 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
     },
     mode: { color: t.textMuted, fontSize: 12 },
     headword: { color: t.textPrimary, fontSize: 34, fontWeight: '800' },
+    listenBtn: {
+      minHeight: 88,
+      borderRadius: 14,
+      backgroundColor: t.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    listenText: { color: t.primaryForeground, fontSize: 13, fontWeight: '600' },
     options: { gap: 8 },
     option: {
       minHeight: 48,
