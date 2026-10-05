@@ -193,6 +193,57 @@ export function heatmapData(timestamps: readonly string[], today: string): Heatm
   return { days, weeks };
 }
 
+/* ---------- 复习历史趋势聚合（周 / 月维度） ---------- */
+
+export type TrendGranularity = 'week' | 'month';
+
+/** 聚合后的一个周期桶：count 为桶内逐日计数之和。 */
+export interface TrendBucket {
+  /** 周 = ISO 周标签「YYYY-Www」（周一起始，ISO 8601）；月 = 自然月「YYYY-MM」。 */
+  label: string;
+  /** 桶内实际有贡献的首/末日（窗口截断时早于/晚于完整周期，照实显示）。 */
+  start: string;
+  end: string;
+  count: number;
+}
+
+/** ISO 8601 周标签：以本周四所在年份为 ISO 年，周一为一周起始。 */
+function isoWeekKey(day: string): string {
+  const d = new Date(`${day}T00:00:00.000Z`);
+  const target = new Date(d);
+  target.setUTCDate(target.getUTCDate() + 3 - ((d.getUTCDay() + 6) % 7));
+  const week1Thu = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+  week1Thu.setUTCDate(week1Thu.getUTCDate() + 3 - ((week1Thu.getUTCDay() + 6) % 7));
+  const week = 1 + Math.round((target.getTime() - week1Thu.getTime()) / (7 * 86400000));
+  return `${target.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+/**
+ * 复习历史按周/月聚合：输入 bucketHistory 补零后的连续逐日序列（升序，窗口内空日已补 0，
+ * 因此窗口内每个周期必然出现、无数据的周期自然为 0），按 ISO 周（周一起始）或自然月分组求和。
+ * 周期键变化即开新桶，首尾桶只覆盖窗口内的不完整周期，照实显示（start/end 取实际贡献日）。
+ * 日期一律按 UTC 切日（同 bucketHistory 约定）。
+ */
+export function aggregateTrend(
+  days: readonly { day: string; count: number }[],
+  granularity: TrendGranularity,
+): TrendBucket[] {
+  const out: TrendBucket[] = [];
+  let currentKey: string | null = null;
+  let cur: TrendBucket = { label: '', start: '', end: '', count: 0 };
+  for (const { day, count } of days) {
+    const key = granularity === 'week' ? isoWeekKey(day) : day.slice(0, 7);
+    if (key !== currentKey) {
+      cur = { label: key, start: day, end: day, count: 0 };
+      currentKey = key;
+      out.push(cur);
+    }
+    cur.end = day;
+    cur.count += count;
+  }
+  return out;
+}
+
 /**
  * 把稀疏的逐日计数补成连续 N 天序列（今天在最后）：缺记录的日子补 0，
  * 便于统计页画 7 日柱状图。

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { bestStreak, bucketHistory, computeStreak, formatReviewTime, futureLoad, heatLevel, heatmapData, todayKey } from '../src/study/stats-core';
+import {
+  aggregateTrend,
+  bestStreak,
+  bucketHistory,
+  computeStreak,
+  formatReviewTime,
+  futureLoad,
+  heatLevel,
+  heatmapData,
+  todayKey,
+} from '../src/study/stats-core';
 
 describe('computeStreak', () => {
   it('returns 0 with no history', () => {
@@ -274,5 +284,74 @@ describe('heatmapData', () => {
     expect(r.days[0].day).toBe('2025-01-06');
     expect(r.days.find((d) => d.day === '2025-12-31')?.count).toBe(1);
     expect(r.days.find((d) => d.day === '2026-01-01')?.count).toBe(1);
+  });
+});
+
+describe('aggregateTrend', () => {
+  it('groups an 8-day window by ISO week, zero-fills the empty week, Monday starts a new week', () => {
+    const days = bucketHistory(
+      [
+        { day: '2026-09-28', count: 3 },
+        { day: '2026-10-01', count: 5 },
+      ],
+      8,
+      '2026-10-05',
+    );
+    const r = aggregateTrend(days, 'week');
+    expect(r).toEqual([
+      { label: '2026-W40', start: '2026-09-28', end: '2026-10-04', count: 8 },
+      { label: '2026-W41', start: '2026-10-05', end: '2026-10-05', count: 0 },
+    ]);
+  });
+
+  it('splits a window across a month boundary', () => {
+    const days = bucketHistory([{ day: '2026-09-30', count: 2 }, { day: '2026-10-02', count: 7 }], 16, '2026-10-05');
+    expect(aggregateTrend(days, 'month')).toEqual([
+      { label: '2026-09', start: '2026-09-20', end: '2026-09-30', count: 2 },
+      { label: '2026-10', start: '2026-10-01', end: '2026-10-05', count: 7 },
+    ]);
+  });
+
+  it('keeps an ISO week together across the year boundary (2025-12-29 → 2026-W01)', () => {
+    const r = aggregateTrend(
+      [
+        { day: '2025-12-28', count: 1 }, // 周日，属 2025-W52
+        { day: '2025-12-29', count: 2 }, // 周一，开启 2026-W01
+        { day: '2026-01-01', count: 4 },
+      ],
+      'week',
+    );
+    expect(r).toEqual([
+      { label: '2025-W52', start: '2025-12-28', end: '2025-12-28', count: 1 },
+      { label: '2026-W01', start: '2025-12-29', end: '2026-01-01', count: 6 },
+    ]);
+  });
+
+  it('splits months across the year boundary', () => {
+    const r = aggregateTrend(
+      [
+        { day: '2025-12-30', count: 1 },
+        { day: '2026-01-02', count: 3 },
+      ],
+      'month',
+    );
+    expect(r).toEqual([
+      { label: '2025-12', start: '2025-12-30', end: '2025-12-30', count: 1 },
+      { label: '2026-01', start: '2026-01-02', end: '2026-01-02', count: 3 },
+    ]);
+  });
+
+  it('returns an empty series for empty input', () => {
+    expect(aggregateTrend([], 'week')).toEqual([]);
+    expect(aggregateTrend([], 'month')).toEqual([]);
+  });
+
+  it('maps a single day to one bucket with start = end', () => {
+    expect(aggregateTrend([{ day: '2026-10-05', count: 9 }], 'week')).toEqual([
+      { label: '2026-W41', start: '2026-10-05', end: '2026-10-05', count: 9 },
+    ]);
+    expect(aggregateTrend([{ day: '2026-10-05', count: 9 }], 'month')).toEqual([
+      { label: '2026-10', start: '2026-10-05', end: '2026-10-05', count: 9 },
+    ]);
   });
 });

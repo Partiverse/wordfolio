@@ -8,13 +8,21 @@ import { ChevronBackIcon, VolumeIcon } from '@/components/icons';
 import { getRecentReviews, getReviewHistory, type RecentReview } from '@/db/study';
 import { getStudySenses, type StudySense } from '@/db/repository';
 import { GRADE_LABELS } from '@/study/fsrs-core';
-import { bucketHistory, formatReviewTime, todayKey } from '@/study/stats-core';
+import { bucketHistory, aggregateTrend, formatReviewTime, todayKey, type TrendGranularity } from '@/study/stats-core';
 import { playWordAudio } from '@/utils/wordAudio';
 import { useTheme } from '@/theme/tokens';
 
 // 复习历史（逻辑树 §6 槽位：统计 tab 二级页——完整曲线 + 逐次明细，数据源 review_log）。
 const HISTORY_DAYS = 30;
 const DETAIL_LIMIT = 200;
+
+// 柱状卡维度切换：日=现状（逐日），周=ISO 周聚合，月=自然月聚合（纯函数 aggregateTrend 前端聚合）。
+type Granularity = 'day' | TrendGranularity;
+const GRANULARITIES: { key: Granularity; label: string }[] = [
+  { key: 'day', label: '日' },
+  { key: 'week', label: '周' },
+  { key: 'month', label: '月' },
+];
 
 export default function HistoryScreen() {
   const t = useTheme();
@@ -23,6 +31,7 @@ export default function HistoryScreen() {
 
   const [logs, setLogs] = useState<RecentReview[] | null>(null);
   const [buckets, setBuckets] = useState<{ day: string; count: number }[]>([]);
+  const [granularity, setGranularity] = useState<Granularity>('day');
   const [senses, setSenses] = useState<Map<string, StudySense>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
@@ -48,7 +57,15 @@ export default function HistoryScreen() {
   }, []);
 
   const last30Total = buckets.reduce((sum, b) => sum + b.count, 0);
-  const maxCount = Math.max(1, ...buckets.map((b) => b.count));
+  // 日=逐日原样；周/月=纯函数前端聚合（输入已是补零连续序列，空期自然为 0）。
+  const columns =
+    granularity === 'day'
+      ? buckets.map((b) => ({ label: b.day.slice(8), count: b.count }))
+      : aggregateTrend(buckets, granularity).map((b) => ({
+          label: granularity === 'week' ? b.label.slice(5) : `${Number(b.label.slice(5, 7))}月`,
+          count: b.count,
+        }));
+  const maxCount = Math.max(1, ...columns.map((c) => c.count));
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -81,23 +98,43 @@ export default function HistoryScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>近 {HISTORY_DAYS} 日复习</Text>
+            <View style={styles.chartHead}>
+              <Text style={styles.cardTitle}>
+                {granularity === 'day' ? `近 ${HISTORY_DAYS} 日复习` : `近 ${HISTORY_DAYS} 日 · 按${granularity === 'week' ? '周' : '月'}`}
+              </Text>
+              <View style={styles.segRow} accessibilityRole="tablist">
+                {GRANULARITIES.map((g) => (
+                  <Pressable
+                    key={g.key}
+                    onPress={() => setGranularity(g.key)}
+                    style={[styles.segChip, granularity === g.key && styles.segChipActive]}
+                    accessibilityRole="tab"
+                    accessibilityLabel={`按${g.label}查看`}
+                    accessibilityState={{ selected: granularity === g.key }}
+                  >
+                    <Text style={[styles.segChipText, granularity === g.key && styles.segChipTextActive]}>{g.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
             <View style={styles.weekRow}>
-              {buckets.map((d, i) => (
-                <View key={d.day} style={styles.dayCol}>
-                  <Text style={styles.dayCount}>{d.count || ''}</Text>
+              {columns.map((c, i) => (
+                <View key={`${granularity}-${c.label}`} style={styles.dayCol}>
+                  <Text style={styles.dayCount}>{c.count || ''}</Text>
                   <View style={styles.dayBarTrack}>
                     <View
                       style={[
                         styles.dayBar,
                         {
-                          height: Math.max(4, (d.count / maxCount) * 44),
-                          backgroundColor: d.count > 0 ? t.accentSuccess : t.bgSurfaceElevated,
+                          height: Math.max(4, (c.count / maxCount) * 44),
+                          backgroundColor: c.count > 0 ? t.accentSuccess : t.bgSurfaceElevated,
                         },
                       ]}
                     />
                   </View>
-                  <Text style={styles.dayLabel}>{(i + 1) % 5 === 0 || i === buckets.length - 1 ? d.day.slice(8) : ''}</Text>
+                  <Text style={styles.dayLabel}>
+                    {granularity === 'day' ? ((i + 1) % 5 === 0 || i === columns.length - 1 ? c.label : '') : c.label}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -157,6 +194,21 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
       gap: 6,
     },
     cardTitle: { color: t.textPrimary, fontSize: 15, fontWeight: '700' },
+    chartHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    segRow: { flexDirection: 'row' },
+    // 分段控件沿用 study 屏 modeChip 既有风格
+    segChip: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.border,
+      backgroundColor: t.bgSurface,
+      marginLeft: 6,
+    },
+    segChipActive: { backgroundColor: t.bgSurfaceElevated, borderColor: t.borderStrong },
+    segChipText: { color: t.textMuted, fontSize: 12, fontWeight: '700' },
+    segChipTextActive: { color: t.textPrimary },
     weekRow: { flexDirection: 'row', gap: 2, alignItems: 'flex-end' },
     dayCol: { flex: 1, alignItems: 'center', gap: 4 },
     dayCount: { color: t.textSecondary, fontSize: 9, fontVariant: ['tabular-nums'] },
