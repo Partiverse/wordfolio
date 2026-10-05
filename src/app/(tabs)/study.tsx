@@ -22,6 +22,7 @@ import {
 import {
   getDistractorSenses,
   getSeedCandidates,
+  getSeedCandidatesForEntries,
   getStudySenses,
   hasCefrData,
   hasExampleData,
@@ -31,6 +32,7 @@ import {
   NEW_CARD_ORDER_KEY,
   orderNewCards,
   parseNewCardOrder,
+  type NewCardCandidate,
 } from '@/study/order-core';
 import { pickPracticeRound, spreadByHeadword } from '@/study/queue';
 import { parseStudyMode, type StudyMode } from '@/study/mode-core';
@@ -133,16 +135,27 @@ export default function StudyScreen() {
             // 复习缺口无法人为补（只能等排期到期），只有新学缺口按「新卡顺序」偏好补新卡（H2）：
             // freq=词频（默认）/ random=每次聚焦重建随机一次 / favoriteFirst=收藏词条义项优先
             const existing = new Set(stored.map((c) => c.stableId));
-            const seedRows = (await getSeedCandidates(goal.newTarget * 4)).filter(
-              (c) => !existing.has(c.stableId),
-            );
-            // 收藏集合（learning.db favorite，entry_id 级）仅在收藏优先档需要
-            const favoriteIds =
-              savedOrder === 'favoriteFirst'
-                ? new Set(await getFavoriteEntryIds().catch(() => []))
-                : new Set<number>();
-            const ordered = orderNewCards(seedRows, savedOrder, favoriteIds);
             const need = Math.max(goal.newTarget - newCount, SEED_BATCH);
+            // 候选池按 need 的 4 倍取：池与 need 等大时 random 洗牌对「选哪些卡」不起作用（复核 R2）。
+            // favoriteFirst 把收藏词条的义项显式并入候选池（复核 R1：收藏低频词不在词频窗口内，
+            // 只靠词频 LIMIT 永远取不到），收藏段在前、词频段去重补齐。
+            let seedRows: NewCardCandidate[];
+            let favoriteIds = new Set<number>();
+            if (savedOrder === 'favoriteFirst') {
+              favoriteIds = new Set(await getFavoriteEntryIds().catch(() => []));
+              const favRows =
+                favoriteIds.size > 0 ? await getSeedCandidatesForEntries([...favoriteIds], need * 4) : [];
+              const seen = new Set(favRows.map((r) => r.stableId));
+              const freqRows = await getSeedCandidates(need * 4);
+              seedRows = [...favRows, ...freqRows.filter((r) => !seen.has(r.stableId))];
+            } else {
+              seedRows = await getSeedCandidates(need * 4);
+            }
+            const ordered = orderNewCards(
+              seedRows.filter((c) => !existing.has(c.stableId)),
+              savedOrder,
+              favoriteIds,
+            );
             const fresh = ordered.slice(0, need).map((c) => newCard(c.stableId, now));
             if (fresh.length) {
               await bulkUpsertReviewCards(fresh);

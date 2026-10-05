@@ -292,6 +292,29 @@ export async function getSeedSenseIds(limit: number): Promise<string[]> {
   return (await getSeedCandidates(limit)).map((c) => c.stableId);
 }
 
+// 指定词条集合内的新卡候选（H2 收藏优先档）：收藏低频词不在词频窗口内，需按词条 id 显式取候选。
+// 词条集由调用方给定（learning.db favorite 的 entry_id），SQL 参数化 IN，仍按词频序出数。
+export async function getSeedCandidatesForEntries(
+  entryIds: readonly number[],
+  limit: number,
+): Promise<NewCardCandidate[]> {
+  if (entryIds.length === 0) return [];
+  const db = await openReleaseDb();
+  const placeholders = entryIds.map(() => '?').join(', ');
+  const rows = await db.getAllAsync<{ stableId: string; entryId: number; freqRank: number | null }>(
+    `SELECT s.stable_id AS stableId,
+            e.id         AS entryId,
+            e.freq_rank  AS freqRank
+       FROM sense s
+       JOIN entry e ON e.id = s.entry_id
+      WHERE e.id IN (${placeholders})
+      ORDER BY e.freq_rank IS NULL, e.freq_rank, s.order_key
+      LIMIT ?`,
+    [...entryIds, limit],
+  );
+  return rows;
+}
+
 /**
  * 四选一干扰项：随机抽 other senses 的释义做选项。
  * 同词性优先（干扰更有效），词性候选不足时放宽到任意词性；

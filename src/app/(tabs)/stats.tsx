@@ -68,8 +68,8 @@ const NEW_CARD_ORDER_OPTIONS = NEW_CARD_ORDERS.map((value) => ({
 
 const NEW_CARD_ORDER_HINTS: Record<NewCardOrder, string> = {
   freq: '按词频从高频到低频补新卡（默认）。',
-  random: '每次重建学习队列时随机抽取新卡。',
-  favoriteFirst: '已收藏词条的义项优先补卡，其余按词频。',
+  random: '每次重建学习队列时，从大于补卡量的候选池里随机选取。',
+  favoriteFirst: '已收藏词条的义项优先补卡（先收藏、切到本档后下次重建生效），其余按词频。',
 };
 
 export default function StatsScreen() {
@@ -169,7 +169,11 @@ export default function StatsScreen() {
     useCallback(() => {
       let alive = true;
       const readSeq = prefWriteSeqRef.current;
-      Promise.all([getSetting(RATING_MODE_KEY), getSetting(NEW_CARD_ORDER_KEY)])
+      // 两个偏好各自兜底：任一 settings 读失败不得连累另一个的恢复
+      Promise.all([
+        getSetting(RATING_MODE_KEY).catch(() => null),
+        getSetting(NEW_CARD_ORDER_KEY).catch(() => null),
+      ])
         .then(([ratingVal, orderVal]) => {
           if (!alive) return;
           if (prefWriteSeqRef.current !== readSeq || prefWritePendingRef.current) return;
