@@ -48,7 +48,7 @@ M-F 区间（`b330e6e..1e8dca2`）5 个 commit（F1–F4 + release beta.20；区
   - F3 `2f78aeb`：**Approve**。futureLoad 日界/归桶/与 isDue 口径逐行推演无误（图上今日桶 ⊇ 任意时刻实际复习队列，UTC 日末收敛，属日粒度预测固有语义，报告如实披露）。采纳整改：基准线渲染层级（原被高柱遮挡，「贯穿」名不副实）、补 day-30 边界用例；聚焦刷新留 M-G。
   - F4 `4203fd7`：**Request changes → 已整改**。两 Required：① 列宽公式漏算卡片内边距（页边距 16×2 + 卡片内边距 16×2 = 64，原只减 32），宽屏设备热力图溢出卡片边界——已修；② 带时区偏移的 ISO 戳按字符串前缀切日、违反声明的 UTC 切日约定且与 futureLoad 先例不一致——已修（整串 `Date.parse` 归一 UTC、无时区后缀补 Z），同函数加 `isValidYmd` 显式日历校验堵「2 月 30 日」被 `Date.parse` 静默回卷。另采纳：热力格 `hitSlop=6` 扩触达区、移除 HeatmapCard 未使用的 `today` prop。
 - 整改后门禁复跑（复核会话实跑）：`pnpm lint` / `pnpm typecheck` 0 问题，**vitest 129/129（13 文件）**。较上文 126 的 +3 为复核新增用例：futureLoad day-30 窗口边界、heatmapData +08:00 偏移切日、heatmapData Feb 30 回卷拒绝；上文 126 为整改前快照，以本节 129 为准
-- 整改与本章补记同一 commit 入库；beta.20 apk（40,496,595 B）构建于整改前，整改未触及 F1/F2 与 F4 UI 逻辑的运行时行为差异仅为布局与解析修正，**apk 需重打后发内测**（见 §8）
+- 整改与本章补记同一 commit 入库；beta.20 apk 已于整改后重打（40,497,207 B，2026-10-05 15:32，gradle 增量 31s，aapt 复核 versionName=0.1.0-beta.20），上文 40,496,595 B 为整改前包，内测以重打包为准
 
 ## §3 测试证据
 
