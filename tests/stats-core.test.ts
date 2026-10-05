@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bestStreak, bucketHistory, computeStreak, formatReviewTime, futureLoad, todayKey } from '../src/study/stats-core';
+import { bestStreak, bucketHistory, computeStreak, formatReviewTime, futureLoad, heatLevel, heatmapData, todayKey } from '../src/study/stats-core';
 
 describe('computeStreak', () => {
   it('returns 0 with no history', () => {
@@ -180,5 +180,80 @@ describe('futureLoad', () => {
     const r = futureLoad(['not-a-date', '', '2026-10-06T00:00:00.000Z'], '2026-10-05');
     expect(r.todayCount).toBe(0);
     expect(r.daily7[1]).toEqual({ day: '2026-10-06', count: 1 });
+  });
+});
+
+describe('heatLevel', () => {
+  it('maps 0 to the colorless level', () => {
+    expect(heatLevel(0)).toBe(0);
+  });
+
+  it('uses fixed thresholds 1-2 / 3-5 / 6-9 / 10+', () => {
+    expect(heatLevel(1)).toBe(1);
+    expect(heatLevel(2)).toBe(1);
+    expect(heatLevel(3)).toBe(2);
+    expect(heatLevel(5)).toBe(2);
+    expect(heatLevel(6)).toBe(3);
+    expect(heatLevel(9)).toBe(3);
+    expect(heatLevel(10)).toBe(4);
+    expect(heatLevel(500)).toBe(4);
+  });
+});
+
+describe('heatmapData', () => {
+  it('returns 365 zero days for empty input', () => {
+    const r = heatmapData([], '2026-09-29');
+    expect(r.days).toHaveLength(365);
+    expect(r.days.every((d) => d.count === 0 && d.level === 0)).toBe(true);
+    expect(r.days[364].day).toBe('2026-09-29');
+    expect(r.days[0].day).toBe('2025-09-30');
+  });
+
+  it('builds week columns of exactly 7 cells padded with nulls, cells in weekday rows', () => {
+    const r = heatmapData([], '2026-09-29');
+    // 2025-09-30 是周二（getUTCDay=2），第一列前补 2 个 null
+    expect(r.weeks[0].slice(0, 2)).toEqual([null, null]);
+    expect(r.weeks[0][2]?.day).toBe('2025-09-30');
+    expect(r.weeks[0]).toHaveLength(7);
+    // 全部周列都是 7 格；非 null 格总数 = 365；最后一个非 null 格是今天
+    const flat = r.weeks.flat();
+    expect(flat.filter((c) => c !== null)).toHaveLength(365);
+    expect(flat.filter((c) => c !== null).at(-1)?.day).toBe('2026-09-29');
+    for (const week of r.weeks) expect(week).toHaveLength(7);
+  });
+
+  it('aggregates timestamps per day across both SQLite and ISO formats', () => {
+    const r = heatmapData(
+      [
+        '2026-09-28 08:00:00', // SQLite datetime('now')，kind 无关（review+practice 由调用方合并传入）
+        '2026-09-28 21:30:00',
+        '2026-09-28T23:59:59.000Z',
+        '2026-09-29T00:00:00.000Z',
+      ],
+      '2026-09-29',
+    );
+    expect(r.days[363]).toMatchObject({ day: '2026-09-28', count: 3, level: 2 });
+    expect(r.days[364]).toMatchObject({ day: '2026-09-29', count: 1, level: 1 });
+  });
+
+  it('skips malformed timestamps instead of throwing', () => {
+    const r = heatmapData(['not-a-date', '', '2026-13-99 10:00:00', '2026-09-29 09:00:00'], '2026-09-29');
+    expect(r.days[364].count).toBe(1);
+    expect(r.days.every((d) => d.count <= 1)).toBe(true);
+  });
+
+  it('covers leap day across a leap-year window', () => {
+    const r = heatmapData(['2024-02-29 12:00:00'], '2024-03-01');
+    expect(r.days[0].day).toBe('2023-03-03');
+    expect(r.days).toHaveLength(365);
+    const leap = r.days.find((d) => d.day === '2024-02-29');
+    expect(leap).toMatchObject({ count: 1, level: 1 });
+  });
+
+  it('keeps counting across the year boundary', () => {
+    const r = heatmapData(['2025-12-31 23:00:00', '2026-01-01 00:30:00'], '2026-01-05');
+    expect(r.days[0].day).toBe('2025-01-06');
+    expect(r.days.find((d) => d.day === '2025-12-31')?.count).toBe(1);
+    expect(r.days.find((d) => d.day === '2026-01-01')?.count).toBe(1);
   });
 });

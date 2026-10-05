@@ -110,6 +110,75 @@ export function futureLoad(dueTimes: readonly string[], today: string): FutureLo
   };
 }
 
+/* ---------- 学习热力图（F4） ---------- */
+
+/** 热力图单日格：count=当日打卡次数（review + practice 两类都计），level=颜色五档 0–4（0 无色）。 */
+export interface HeatmapDay {
+  day: string; // YYYY-MM-DD（UTC，与 review_log 的 datetime('now') 切日同轨）
+  count: number;
+  level: 0 | 1 | 2 | 3 | 4;
+}
+
+export interface HeatmapResult {
+  /** 近 365 天逐日（升序，末日=今天），无记录的日子补 0。 */
+  days: HeatmapDay[];
+  /** 按周分列：每列固定 7 格（行序=周日→周六），窗口外的首尾位置补 null，供 GitHub 式网格直渲染。 */
+  weeks: (HeatmapDay | null)[][];
+}
+
+/** 次数 → 五档色阶：0 无色；1–2 / 3–5 / 6–9 / ≥10 四档递深。 */
+export function heatLevel(count: number): 0 | 1 | 2 | 3 | 4 {
+  if (count <= 0) return 0;
+  if (count <= 2) return 1;
+  if (count <= 5) return 2;
+  if (count <= 9) return 3;
+  return 4;
+}
+
+/**
+ * 学习热力图（F4）：输入 review_log 时间戳列表（SQLite「YYYY-MM-DD HH:MM:SS」UTC 或 ISO 8601，
+ * kind 两类都算打卡，由调用方一并传入）与今天（YYYY-MM-DD），输出近 365 天（含今天）逐日计数
+ * 与按周分列的渲染结构。日期一律按 UTC 切日（同 todayKey / bucketHistory / getReviewHistory 的
+ * substr(reviewed_at,1,10) 约定）；无法解析的时间戳跳过；时间戳顺序任意、可重复。
+ */
+export function heatmapData(timestamps: readonly string[], today: string): HeatmapResult {
+  const counts = new Map<string, number>();
+  for (const ts of timestamps) {
+    const m = ts.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (!m) continue;
+    const day = m[1];
+    if (Number.isNaN(Date.parse(`${day}T00:00:00.000Z`))) continue;
+    counts.set(day, (counts.get(day) ?? 0) + 1);
+  }
+
+  const base = new Date(`${today}T00:00:00.000Z`);
+  const days: HeatmapDay[] = [];
+  for (let i = 365 - 1; i >= 0; i -= 1) {
+    const d = new Date(base);
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const count = counts.get(key) ?? 0;
+    days.push({ day: key, count, level: heatLevel(count) });
+  }
+
+  // 首格对齐星期：起始日是周几，就在第一列前面补几个 null（0=周日）
+  const lead = new Date(`${days[0].day}T00:00:00.000Z`).getUTCDay();
+  const weeks: (HeatmapDay | null)[][] = [];
+  let column: (HeatmapDay | null)[] = new Array(lead).fill(null);
+  for (const d of days) {
+    column.push(d);
+    if (column.length === 7) {
+      weeks.push(column);
+      column = [];
+    }
+  }
+  if (column.length > 0) {
+    while (column.length < 7) column.push(null);
+    weeks.push(column);
+  }
+  return { days, weeks };
+}
+
 /**
  * 把稀疏的逐日计数补成连续 N 天序列（今天在最后）：缺记录的日子补 0，
  * 便于统计页画 7 日柱状图。

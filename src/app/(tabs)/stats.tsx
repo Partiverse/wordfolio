@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 
@@ -10,6 +19,7 @@ import {
   getPracticeDaily,
   getPracticeTotal,
   getReviewHistory,
+  getReviewLogTimestamps,
   getSetting,
   getStudyStats,
   setDailyTarget,
@@ -18,10 +28,19 @@ import {
 } from '@/db/study';
 import { disableReminder, enableReminder, getReminderSetting, REMINDER_TIMES, type ReminderSetting } from '@/utils/reminders';
 import { parseRatingMode, RATING_MODE_KEY, type RatingMode } from '@/study/rating-core';
-import { bestStreak, bucketHistory, computeStreak, futureLoad, todayKey, type FutureLoadResult } from '@/study/stats-core';
+import {
+  bestStreak,
+  bucketHistory,
+  computeStreak,
+  futureLoad,
+  heatmapData,
+  todayKey,
+  type FutureLoadResult,
+  type HeatmapResult,
+} from '@/study/stats-core';
 import { useFavorites } from '@/stores/favorites';
 import { useThemeStore } from '@/stores/theme';
-import { useTheme } from '@/theme/tokens';
+import { useResolvedScheme, useTheme } from '@/theme/tokens';
 import type { ThemePreference } from '@/theme/theme-core';
 
 const TARGET_OPTIONS = [10, 20, 30, 50];
@@ -43,6 +62,8 @@ export default function StatsScreen() {
   // 未来复习压力（F3）：7/30 天切换的逐日到期量 + 今日基准线
   const [forecast, setForecast] = useState<FutureLoadResult | null>(null);
   const [forecastRange, setForecastRange] = useState<7 | 30>(7);
+  // 学习热力图（F4）：近 365 天逐日打卡计数 + 按周分列结构
+  const [heatmap, setHeatmap] = useState<HeatmapResult | null>(null);
   const [reminder, setReminder] = useState<ReminderSetting | null>(null);
   const [reminderBusy, setReminderBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -63,8 +84,8 @@ export default function StatsScreen() {
   useEffect(() => {
     let alive = true;
     const day = todayKey(new Date());
-    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting(), getPracticeTotal(), getPracticeDaily(7), getDueTimes()])
-      .then(([s, goal, rows, rem, practices, practiceRows, dueTimes]) => {
+    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting(), getPracticeTotal(), getPracticeDaily(7), getDueTimes(), getReviewLogTimestamps(365)])
+      .then(([s, goal, rows, rem, practices, practiceRows, dueTimes, logTimes]) => {
         if (!alive) return;
         setStats(s);
         setHistory(bucketHistory(rows, 7, day));
@@ -74,6 +95,7 @@ export default function StatsScreen() {
         setTarget(goal.target);
         setDoneToday(goal.completed);
         setForecast(futureLoad(dueTimes, day));
+        setHeatmap(heatmapData(logTimes, day));
       })
       .catch((e) => {
         console.warn('[stats] load failed', e);
@@ -201,6 +223,8 @@ export default function StatsScreen() {
               <Text style={styles.cardTitle}>近 7 日自由练习</Text>
               <WeekBars rows={practiceHistory} activeColor={t.accentWarning} />
             </View>
+
+            <HeatmapCard data={heatmap} today={todayKey(new Date())} />
 
             <View style={styles.card}>
               <View style={styles.reminderHead}>
@@ -426,6 +450,77 @@ function WeekBars({ rows, activeColor }: { rows: { day: string; count: number }[
   );
 }
 
+/** 学习热力图（F4）：GitHub 式近 365 天格状，列=周、行=周日→周六；
+ *  颜色五档=当日打卡次数（review+practice，0 次无色槽）；点格内联显示当日次数，不做详情页。 */
+const HEAT_RAMP_LIGHT = ['#fde68a', '#fbbf24', '#d97706', '#b45309'];
+const HEAT_RAMP_DARK = ['#78350f', '#b45309', '#f59e0b', '#fcd34d'];
+
+function HeatmapCard({ data, today }: { data: HeatmapResult | null; today: string }) {
+  const t = useTheme();
+  const scheme = useResolvedScheme();
+  const styles = makeStyles(t);
+  const { width } = useWindowDimensions();
+  // 53 列（约 365 天）自适应屏宽：减去页边距 32 与 52 个列间隙
+  const gap = 2;
+  const cell = Math.max(3, Math.floor((width - 32 - 52 * gap) / 53));
+  const [selected, setSelected] = useState<string | null>(null);
+  const ramp = scheme === 'dark' ? HEAT_RAMP_DARK : HEAT_RAMP_LIGHT;
+  const selectedDay = selected ? data?.days.find((d) => d.day === selected) : undefined;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.reminderHead}>
+        <Text style={styles.cardTitle}>学习热力图</Text>
+        <View style={styles.heatLegend}>
+          <Text style={styles.heatLegendText}>少</Text>
+          {[0, 1, 2, 3, 4].map((lv) => (
+            <View
+              key={lv}
+              style={[styles.heatCell, { width: cell, height: cell, backgroundColor: lv === 0 ? t.bgSurfaceElevated : ramp[lv - 1] }]}
+            />
+          ))}
+          <Text style={styles.heatLegendText}>多</Text>
+        </View>
+      </View>
+      {data ? (
+        <View style={{ gap }}>
+          {data.weeks.map((week, wi) => (
+            <View key={wi} style={{ flexDirection: 'row', gap }}>
+              {week.map((d, di) =>
+                d ? (
+                  <Pressable
+                    key={d.day}
+                    onPress={() => setSelected(selected === d.day ? null : d.day)}
+                    style={[
+                      styles.heatCell,
+                      {
+                        width: cell,
+                        height: cell,
+                        backgroundColor: d.count > 0 ? ramp[d.level - 1] : t.bgSurfaceElevated,
+                        borderWidth: d.day === selected ? 1 : 0,
+                        borderColor: t.textSecondary,
+                      },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${d.day} 复习 ${d.count} 次`}
+                  />
+                ) : (
+                  <View key={`empty-${di}`} style={{ width: cell, height: cell }} />
+                ),
+              )}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <Text style={styles.cardHint}>
+        {selectedDay
+          ? `${selectedDay.day}：${selectedDay.count} 次`
+          : '近一年每天的复习量（正式学习 + 自由练习都算打卡）；点任意格子查看当日次数。'}
+      </Text>
+    </View>
+  );
+}
+
 /** 未来复习压力逐日柱状（F3）：7 天单行 / 30 天每行 15 列两行；
  *  每列轨道内按今日量画一条贯穿基准线，今日列高亮。 */
 function LoadBars({
@@ -578,5 +673,8 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
     barTrack: { flex: 1, height: 8, borderRadius: 999, backgroundColor: t.bgSurfaceElevated, overflow: 'hidden' },
     barFill: { height: 8, borderRadius: 999 },
     barValue: { color: t.textMuted, fontSize: 12, width: 32, textAlign: 'right', fontVariant: ['tabular-nums'] },
+    heatLegend: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+    heatLegendText: { color: t.textMuted, fontSize: 10, marginHorizontal: 2 },
+    heatCell: { borderRadius: 2 },
   });
 }

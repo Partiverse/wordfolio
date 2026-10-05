@@ -350,6 +350,18 @@ export async function getPracticeDaily(days: number): Promise<{ day: string; cou
   return rows.map((r) => ({ day: r.day, count: r.n }));
 }
 
+/** 近 days 天的 review_log 时间戳原文（kind 不筛选：review 与 practice 都算打卡，F4 热力图按日聚合用）。 */
+export async function getReviewLogTimestamps(days: number): Promise<string[]> {
+  const db = await openLearningDb();
+  const rows = await db.getAllAsync<{ reviewedAt: string }>(
+    `SELECT reviewed_at AS reviewedAt
+       FROM review_log
+      WHERE reviewed_at >= date('now', ?)`,
+    [`-${days} days`],
+  );
+  return rows.map((r) => r.reviewedAt);
+}
+
 /* ---------- 通用设置（key/value） ---------- */
 
 export async function getSetting(key: string): Promise<string | null> {
