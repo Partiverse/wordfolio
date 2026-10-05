@@ -1,11 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 import { ChevronForwardIcon, FlameIcon, PencilIcon, SparkIcon, StarIcon, TrophyIcon } from '@/components/icons';
-import { getDailyGoal, getPracticeDaily, getPracticeTotal, getReviewHistory, getStudyStats, setDailyTarget, type StudyStats } from '@/db/study';
+import {
+  getDailyGoal,
+  getPracticeDaily,
+  getPracticeTotal,
+  getReviewHistory,
+  getSetting,
+  getStudyStats,
+  setDailyTarget,
+  setSetting,
+  type StudyStats,
+} from '@/db/study';
 import { disableReminder, enableReminder, getReminderSetting, REMINDER_TIMES, type ReminderSetting } from '@/utils/reminders';
+import { parseRatingMode, RATING_MODE_KEY, type RatingMode } from '@/study/rating-core';
 import { bestStreak, bucketHistory, computeStreak, todayKey } from '@/study/stats-core';
 import { useFavorites } from '@/stores/favorites';
 import { useThemeStore } from '@/stores/theme';
@@ -33,6 +44,8 @@ export default function StatsScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [target, setTarget] = useState(20);
   const [doneToday, setDoneToday] = useState(0);
+  // 评分模式偏好（settings 表 key='ratingMode'，F1）：默认三档自评，开「专家模式」后翻卡四键
+  const [ratingMode, setRatingMode] = useState<RatingMode>('simple');
   const { ids: favoriteIds, hydrate } = useFavorites();
   const themePreference = useThemeStore((s) => s.preference);
   const setThemePreference = useThemeStore((s) => s.setPreference);
@@ -70,6 +83,28 @@ export default function StatsScreen() {
     const day = todayKey(new Date());
     setTarget(next);
     setDailyTarget(day, next).catch(() => {});
+  }, []);
+
+  // 聚焦即恢复评分偏好：学习屏/备份导入改了库，切回统计页立即反映
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      getSetting(RATING_MODE_KEY)
+        .then((v) => {
+          if (alive) setRatingMode(parseRatingMode(v));
+        })
+        .catch(() => {});
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
+
+  // 切开关即写入 settings，学习屏聚焦时恢复；落库失败静默（本次会话内仍生效）
+  const toggleExpertMode = useCallback((on: boolean) => {
+    const next: RatingMode = on ? 'expert' : 'simple';
+    setRatingMode(next);
+    void setSetting(RATING_MODE_KEY, next).catch(() => {});
   }, []);
 
   const streak = stats ? computeStreak(stats.activeDays, todayKey(new Date())) : 0;
@@ -214,6 +249,27 @@ export default function StatsScreen() {
                 </View>
               ) : (
                 <Text style={styles.cardHint}>开启后每天固定时间提醒你复习（需允许系统通知）。</Text>
+              )}
+            </View>
+
+            <View style={styles.card}>
+              <View style={styles.reminderHead}>
+                <Text style={styles.cardTitle}>评分模式</Text>
+                <Switch
+                  value={ratingMode === 'expert'}
+                  onValueChange={toggleExpertMode}
+                  trackColor={{ false: t.bgSurfaceElevated, true: t.primary }}
+                  thumbColor="#ffffff"
+                />
+              </View>
+              {ratingMode === 'expert' ? (
+                <Text style={styles.cardHint}>
+                  专家模式：卡片复习展示四键自评（认识 / 简单 / 模糊 / 忘记）。
+                </Text>
+              ) : (
+                <Text style={styles.cardHint}>
+                  三档自评（认识 / 模糊 / 忘记）；开启后增加「简单」键，由 FSRS 以更高间隔排期。
+                </Text>
               )}
             </View>
 

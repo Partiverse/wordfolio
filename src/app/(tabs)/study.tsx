@@ -31,14 +31,19 @@ import { parseStudyMode, type StudyMode } from '@/study/mode-core';
 import { shouldShowBlankExercise } from '@/study/upstream-core';
 import {
   buildTodayQueue,
-  GRADE_LABELS,
-  GRADES,
   gradeCard,
   isDue,
   newCard,
   queueProgress,
   type StoredCard,
 } from '@/study/fsrs-core';
+import {
+  gradesForMode,
+  parseRatingMode,
+  RATING_LABELS,
+  RATING_MODE_KEY,
+  type RatingMode,
+} from '@/study/rating-core';
 import { todayKey } from '@/study/stats-core';
 import { speakEn, speakZh } from '@/utils/speech';
 import { playWordAudio, prefetchWordAudio } from '@/utils/wordAudio';
@@ -48,6 +53,8 @@ const DEFAULT_TARGET = 20;
 const SEED_BATCH = 20;
 // 学习模式记忆（settings 表 key='studyMode'，E3）：切模式即写入，聚焦重建时恢复
 const STUDY_MODE_KEY = 'studyMode';
+// 评分模式（settings 表 key='ratingMode'，F1）：默认三档自评；统计页开「专家模式」后翻卡四键
+// 键序与 FSRS 映射见 src/study/rating-core.ts（认识→Good、简单→Easy、模糊→Hard、忘记→Again）
 
 export default function StudyScreen() {
   const t = useTheme();
@@ -63,6 +70,7 @@ export default function StudyScreen() {
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [mode, setMode] = useState<StudyMode>('flip');
+  const [ratingMode, setRatingMode] = useState<RatingMode>('simple');
   const [distractors, setDistractors] = useState<StudySense[]>([]);
   // 自由练习（练习/听音/拼写）：独立于卡片正式队列，只记 review_log 不动 FSRS 排期
   const [practiceQueue, setPracticeQueue] = useState<StoredCard[]>([]);
@@ -99,6 +107,9 @@ export default function StudyScreen() {
           // 恢复上次使用的学习模式（无效值回退「卡片」）；失败不阻断队列重建
           const savedMode = parseStudyMode(await getSetting(STUDY_MODE_KEY).catch(() => null));
           setMode(savedMode);
+          // 恢复评分模式偏好（统计页开关 / 备份导入都会改库），无效值回退三档自评
+          const savedRating = parseRatingMode(await getSetting(RATING_MODE_KEY).catch(() => null));
+          setRatingMode(savedRating);
           const goal = await getDailyGoal(day);
           const stored = await getReviewCards();
           const dueCount = stored.filter((c) => isDue(c, now)).length;
@@ -408,7 +419,7 @@ export default function StudyScreen() {
       {!quizMode && !flipFinished && sense && mode === 'flip' ? (
         <View style={styles.gradeRow}>
           {revealed
-            ? GRADES.map((g) => (
+            ? gradesForMode(ratingMode).map((g) => (
                 <Pressable
                   key={g}
                   style={[styles.gradeBtn, g === 3 && styles.gradeBtnPrimary]}
@@ -417,7 +428,7 @@ export default function StudyScreen() {
                   accessibilityRole="button"
                 >
                   <Text style={[styles.gradeText, g === 3 && styles.gradeTextPrimary]}>
-                    {GRADE_LABELS[g]}
+                    {RATING_LABELS[g]}
                   </Text>
                 </Pressable>
               ))
