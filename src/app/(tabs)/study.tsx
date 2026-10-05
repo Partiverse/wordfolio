@@ -11,6 +11,7 @@ import { TtsBanner } from '@/components/TtsHint';
 import {
   bulkUpsertReviewCards,
   getDailyGoal,
+  getFavoriteEntryIds,
   getReviewCards,
   getSetting,
   logReview,
@@ -20,12 +21,17 @@ import {
 } from '@/db/study';
 import {
   getDistractorSenses,
-  getSeedSenseIds,
+  getSeedCandidates,
   getStudySenses,
   hasCefrData,
   hasExampleData,
   type StudySense,
 } from '@/db/repository';
+import {
+  NEW_CARD_ORDER_KEY,
+  orderNewCards,
+  parseNewCardOrder,
+} from '@/study/order-core';
 import { pickPracticeRound, spreadByHeadword } from '@/study/queue';
 import { parseStudyMode, type StudyMode } from '@/study/mode-core';
 import { shouldShowBlankExercise } from '@/study/upstream-core';
@@ -114,19 +120,30 @@ export default function StudyScreen() {
           // 恢复评分模式偏好（统计页开关 / 备份导入都会改库），无效值回退三档自评
           const savedRating = parseRatingMode(await getSetting(RATING_MODE_KEY).catch(() => null));
           setRatingMode(savedRating);
+          // 恢复新卡补卡顺序偏好（H2，统计页三段选择 / 备份导入都会改库），无效值回退词频序
+          const savedOrder = parseNewCardOrder(await getSetting(NEW_CARD_ORDER_KEY).catch(() => null));
           const goal = await getDailyGoal(day);
           const stored = await getReviewCards();
           // F5 双目标分口径：复习缺口无法人为补（只能等排期到期），
-          // 只有新学缺口（存量新卡 < newTarget）按词频补新卡
+          // 只有新学缺口（存量新卡 < newTarget）按「新卡顺序」偏好补新卡
           const newCount = stored.filter((c) => c.state === State.New).length;
 
           let all = stored;
           if (newCount < goal.newTarget) {
-            // 复习缺口无法人为补（只能等排期到期），只有新学缺口按词频补新卡
+            // 复习缺口无法人为补（只能等排期到期），只有新学缺口按「新卡顺序」偏好补新卡（H2）：
+            // freq=词频（默认）/ random=每次聚焦重建随机一次 / favoriteFirst=收藏词条义项优先
             const existing = new Set(stored.map((c) => c.stableId));
-            const candidates = (await getSeedSenseIds(goal.newTarget * 4)).filter((id) => !existing.has(id));
+            const seedRows = (await getSeedCandidates(goal.newTarget * 4)).filter(
+              (c) => !existing.has(c.stableId),
+            );
+            // 收藏集合（learning.db favorite，entry_id 级）仅在收藏优先档需要
+            const favoriteIds =
+              savedOrder === 'favoriteFirst'
+                ? new Set(await getFavoriteEntryIds().catch(() => []))
+                : new Set<number>();
+            const ordered = orderNewCards(seedRows, savedOrder, favoriteIds);
             const need = Math.max(goal.newTarget - newCount, SEED_BATCH);
-            const fresh = candidates.slice(0, need).map((id) => newCard(id, now));
+            const fresh = ordered.slice(0, need).map((c) => newCard(c.stableId, now));
             if (fresh.length) {
               await bulkUpsertReviewCards(fresh);
               all = [...stored, ...fresh];

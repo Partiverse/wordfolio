@@ -29,6 +29,13 @@ import {
 import { disableReminder, enableReminder, getReminderSetting, REMINDER_TIMES, type ReminderSetting } from '@/utils/reminders';
 import { parseRatingMode, RATING_MODE_KEY, type RatingMode } from '@/study/rating-core';
 import {
+  NEW_CARD_ORDER_KEY,
+  NEW_CARD_ORDER_LABELS,
+  NEW_CARD_ORDERS,
+  parseNewCardOrder,
+  type NewCardOrder,
+} from '@/study/order-core';
+import {
   bestStreak,
   bucketHistory,
   computeStreak,
@@ -53,6 +60,18 @@ const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'system', label: '跟随系统' },
 ];
 
+// H2 新卡补卡顺序：三段选择（segChip 风格同源 history.tsx），档位文案与解析在 order-core
+const NEW_CARD_ORDER_OPTIONS = NEW_CARD_ORDERS.map((value) => ({
+  value,
+  label: NEW_CARD_ORDER_LABELS[value],
+}));
+
+const NEW_CARD_ORDER_HINTS: Record<NewCardOrder, string> = {
+  freq: '按词频从高频到低频补新卡（默认）。',
+  random: '每次重建学习队列时随机抽取新卡。',
+  favoriteFirst: '已收藏词条的义项优先补卡，其余按词频。',
+};
+
 export default function StatsScreen() {
   const t = useTheme();
   const styles = makeStyles(t);
@@ -76,10 +95,13 @@ export default function StatsScreen() {
   const [newDoneToday, setNewDoneToday] = useState(0);
   // 评分模式偏好（settings 表 key='ratingMode'，F1）：默认三档自评，开「专家模式」后翻卡四键
   const [ratingMode, setRatingMode] = useState<RatingMode>('simple');
-  // 聚焦读 vs 乐观写的竞态防护：写序号在每次乐观切换时自增，聚焦读发起时记下当时序号，
-  // resolve 时若期间发生过切换（序号已变）或在途写尚未落库（pending），则放弃覆盖本地状态。
-  const ratingWriteSeqRef = useRef(0);
-  const ratingWritePendingRef = useRef(false);
+  // 新卡补卡顺序偏好（settings 表 key='newCardOrder'，H2）：默认词频序，统计页三段选择
+  const [newCardOrder, setNewCardOrder] = useState<NewCardOrder>('freq');
+  // 聚焦读 vs 乐观写的竞态防护（ratingMode 与 newCardOrder 两个偏好共用）：写序号在每次乐观切换时自增，
+  // 聚焦读发起时记下当时序号，resolve 时若期间发生过切换（序号已变）或在途写尚未落库（pending），
+  // 则放弃覆盖本地状态。
+  const prefWriteSeqRef = useRef(0);
+  const prefWritePendingRef = useRef(false);
   const { ids: favoriteIds, hydrate } = useFavorites();
   const themePreference = useThemeStore((s) => s.preference);
   const setThemePreference = useThemeStore((s) => s.setPreference);
@@ -141,17 +163,18 @@ export default function StatsScreen() {
     [target],
   );
 
-  // 聚焦即恢复评分偏好：学习屏/备份导入改了库，切回统计页立即反映；
-  // 在途/期间发生的本地切换不回退（见 ratingWriteSeqRef 注释）
+  // 聚焦即恢复评分模式与新卡顺序偏好：学习屏/备份导入改了库，切回统计页立即反映；
+  // 在途/期间发生的本地切换不回退（见 prefWriteSeqRef 注释）
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      const readSeq = ratingWriteSeqRef.current;
-      getSetting(RATING_MODE_KEY)
-        .then((v) => {
+      const readSeq = prefWriteSeqRef.current;
+      Promise.all([getSetting(RATING_MODE_KEY), getSetting(NEW_CARD_ORDER_KEY)])
+        .then(([ratingVal, orderVal]) => {
           if (!alive) return;
-          if (ratingWriteSeqRef.current !== readSeq || ratingWritePendingRef.current) return;
-          setRatingMode(parseRatingMode(v));
+          if (prefWriteSeqRef.current !== readSeq || prefWritePendingRef.current) return;
+          setRatingMode(parseRatingMode(ratingVal));
+          setNewCardOrder(parseNewCardOrder(orderVal));
         })
         .catch(() => {});
       return () => {
@@ -164,14 +187,26 @@ export default function StatsScreen() {
   // 下次聚焦读会以 DB 真值为准重新对齐）
   const toggleExpertMode = useCallback((on: boolean) => {
     const next: RatingMode = on ? 'expert' : 'simple';
-    const writeSeq = ++ratingWriteSeqRef.current;
-    ratingWritePendingRef.current = true;
+    const writeSeq = ++prefWriteSeqRef.current;
+    prefWritePendingRef.current = true;
     setRatingMode(next);
     setSetting(RATING_MODE_KEY, next)
       .catch(() => {})
       .finally(() => {
         // 仅当没有更新的切换在途时才解除 pending，避免早完成的旧写清掉新写的标记
-        if (ratingWriteSeqRef.current === writeSeq) ratingWritePendingRef.current = false;
+        if (prefWriteSeqRef.current === writeSeq) prefWritePendingRef.current = false;
+      });
+  }, []);
+
+  // 切档即写入 settings（H2），学习屏下次聚焦重建队列时生效；竞态防护同 toggleExpertMode
+  const changeNewCardOrder = useCallback((next: NewCardOrder) => {
+    const writeSeq = ++prefWriteSeqRef.current;
+    prefWritePendingRef.current = true;
+    setNewCardOrder(next);
+    setSetting(NEW_CARD_ORDER_KEY, next)
+      .catch(() => {})
+      .finally(() => {
+        if (prefWriteSeqRef.current === writeSeq) prefWritePendingRef.current = false;
       });
   }, []);
 
@@ -278,6 +313,28 @@ export default function StatsScreen() {
               <Text style={styles.cardHint}>
                 队列先复习后新学；今天已新学 {newDoneToday}/{newTarget}。明天起按新目标组队列，今天的进度不变。
               </Text>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>新卡顺序</Text>
+              <View style={styles.segRow} accessibilityRole="tablist">
+                {NEW_CARD_ORDER_OPTIONS.map((opt) => {
+                  const active = opt.value === newCardOrder;
+                  return (
+                    <Pressable
+                      key={opt.value}
+                      onPress={() => changeNewCardOrder(opt.value)}
+                      style={[styles.segChip, active && styles.segChipActive]}
+                      accessibilityRole="tab"
+                      accessibilityLabel={`新卡顺序：${opt.label}`}
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.segChipText, active && styles.segChipTextActive]}>{opt.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={styles.cardHint}>{NEW_CARD_ORDER_HINTS[newCardOrder]}</Text>
             </View>
 
             <View style={styles.card}>
@@ -713,6 +770,20 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
     targetBtnActive: { backgroundColor: t.primary, borderColor: t.primary },
     targetText: { color: t.textSecondary, fontWeight: '700', fontSize: 15 },
     targetTextActive: { color: t.primaryForeground },
+    segRow: { flexDirection: 'row' },
+    // 分段控件沿用 history 屏 segChip 既有风格（同源 study 屏 modeChip）
+    segChip: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.border,
+      backgroundColor: t.bgSurface,
+      marginLeft: 6,
+    },
+    segChipActive: { backgroundColor: t.bgSurfaceElevated, borderColor: t.borderStrong },
+    segChipText: { color: t.textMuted, fontSize: 12, fontWeight: '700' },
+    segChipTextActive: { color: t.textPrimary },
     reminderHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     weekRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-end' },
     dayCol: { flex: 1, alignItems: 'center', gap: 4 },

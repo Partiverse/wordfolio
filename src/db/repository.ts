@@ -4,6 +4,7 @@
 import { openReleaseDb, type SearchHit } from './release';
 import { sortMorphemes } from './morpheme-core';
 import { buildFtsMatch, buildLikePattern, isTooShort, shouldUseLikeFallback } from './search';
+import type { NewCardCandidate } from '../study/order-core';
 
 export interface BrowseItem {
   entryId: number;
@@ -269,18 +270,26 @@ export async function getStudySenses(stableIds: readonly string[]): Promise<Map<
   return out;
 }
 
-// 词库首批新卡候选：按词频排序的义项（义项级，先取前 limit 个）。
-export async function getSeedSenseIds(limit: number): Promise<string[]> {
+// 词库首批新卡候选（H2）：按词频排序的义项 + 重排所需元数据（所属词条 id、词频序）。
+// 与 learning.db favorite 表的合流在 JS 侧做（orderNewCards），SQL 只按既定词频序出数。
+export async function getSeedCandidates(limit: number): Promise<NewCardCandidate[]> {
   const db = await openReleaseDb();
-  const rows = await db.getAllAsync<{ stableId: string }>(
-    `SELECT s.stable_id AS stableId
+  const rows = await db.getAllAsync<{ stableId: string; entryId: number; freqRank: number | null }>(
+    `SELECT s.stable_id AS stableId,
+            e.id         AS entryId,
+            e.freq_rank  AS freqRank
        FROM sense s
        JOIN entry e ON e.id = s.entry_id
       ORDER BY e.freq_rank IS NULL, e.freq_rank, s.order_key
       LIMIT ?`,
     [limit],
   );
-  return rows.map((r) => r.stableId);
+  return rows;
+}
+
+// 词库首批新卡候选：按词频排序的义项 id（向后兼容包装，历史调用方仍可用）。
+export async function getSeedSenseIds(limit: number): Promise<string[]> {
+  return (await getSeedCandidates(limit)).map((c) => c.stableId);
 }
 
 /**
