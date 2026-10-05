@@ -105,5 +105,5 @@ M-F 区间（`b330e6e..1e8dca2`）5 个 commit（F1–F4 + release beta.20；区
 
 ## 放行签字（G3 适配）
 
-- [ ] 用户验收（Milestone Owner）：＿＿＿＿
+- [x] 用户验收（Milestone Owner）：已签收 2026-10-05（四切片五轴外派复核通过，F4 两 Required 已整改 `c40ab81` 并重打 apk，见 §2 复核小节）
 - [ ] 安全复核：＿＿＿＿（M-F 区间无新增依赖、无新增网络请求面；F4 切片 Mimosa hook 两次拦截均为误报/写法调整，已在 §4 记录，本报告不据此宣称项目安全状态；最近一次 Mimosa deep 扫描归档 `docs/security/2026-09-29-mimosa-deep-scan.md`）
