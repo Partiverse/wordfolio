@@ -81,30 +81,36 @@ export default function StatsScreen() {
     void hydrateTheme();
   }, [hydrate, hydrateTheme]);
 
-  useEffect(() => {
-    let alive = true;
-    const day = todayKey(new Date());
-    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting(), getPracticeTotal(), getPracticeDaily(7), getDueTimes(), getReviewLogTimestamps(365)])
-      .then(([s, goal, rows, rem, practices, practiceRows, dueTimes, logTimes]) => {
-        if (!alive) return;
-        setStats(s);
-        setHistory(bucketHistory(rows, 7, day));
-        setPracticeHistory(bucketHistory(practiceRows, 7, day));
-        setReminder(rem);
-        setPracticeTotal(practices);
-        setTarget(goal.target);
-        setDoneToday(goal.completed);
-        setForecast(futureLoad(dueTimes, day));
-        setHeatmap(heatmapData(logTimes, day));
-      })
-      .catch((e) => {
-        console.warn('[stats] load failed', e);
-        if (alive) setLoadError(String(e));
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // 聚焦即拉取全部统计数据（M-F F-2）：tabs 下首次聚焦即 mount，单一触发避免双拉；
+  // 学完卡切回统计页数字立即更新；todayKey 每次聚焦重算，跨 UTC 午夜后口径正确。
+  // 已有数据时静默刷新（loading 态仅在首载 stats 为空时显示），失败不清空已显示数据。
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      const day = todayKey(new Date());
+      Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting(), getPracticeTotal(), getPracticeDaily(7), getDueTimes(), getReviewLogTimestamps(365)])
+        .then(([s, goal, rows, rem, practices, practiceRows, dueTimes, logTimes]) => {
+          if (!alive) return;
+          setStats(s);
+          setHistory(bucketHistory(rows, 7, day));
+          setPracticeHistory(bucketHistory(practiceRows, 7, day));
+          setReminder(rem);
+          setPracticeTotal(practices);
+          setTarget(goal.target);
+          setDoneToday(goal.completed);
+          setForecast(futureLoad(dueTimes, day));
+          setHeatmap(heatmapData(logTimes, day));
+          setLoadError(null);
+        })
+        .catch((e) => {
+          console.warn('[stats] load failed', e);
+          if (alive) setLoadError(String(e));
+        });
+      return () => {
+        alive = false;
+      };
+    }, []),
+  );
 
   const changeTarget = useCallback((next: number) => {
     const day = todayKey(new Date());
@@ -142,7 +148,7 @@ export default function StatsScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.h1}>统计</Text>
 
-        {loadError ? (
+        {!stats && loadError ? (
           <View style={styles.errorBox}>
             <Text style={styles.errorText}>统计加载失败：{loadError}</Text>
           </View>
@@ -150,6 +156,11 @@ export default function StatsScreen() {
           <ActivityIndicator color={t.primary} style={{ marginTop: 40 }} />
         ) : (
           <>
+            {loadError ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>统计刷新失败，以下为上次加载数据：{loadError}</Text>
+              </View>
+            ) : null}
             <View style={styles.row}>
               <StatTile
                 label="今日已复习"
