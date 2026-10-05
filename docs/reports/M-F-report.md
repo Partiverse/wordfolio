@@ -40,6 +40,16 @@ M-F 区间（`b330e6e..1e8dca2`）5 个 commit（F1–F4 + release beta.20；区
 - **规模**：src+tests 55 个源文件 / 6853 行（M-E 时 50 文件 / 6015 行）
 - **逻辑树核对与更新**（本切片执行）：本切片同步更新了功能逻辑树——头部版本行 beta.15→beta.20；§2 学习线加入评分模式语义；§3 数据所有权图与 §4 屏级规格补 morpheme/entry_morpheme 空表与详情页隐藏语义；§5 新增 §5.5 评分模式、§5.6 统计衍生指标（未来复习压力 / 学习热力图）；§6 槽位表新增四行已交付记录；§7 组件清单补 rating-core / morpheme-core / MorphemeCard 并更新 stats-core 职责；§8 补热力图色阶与「无数据整块隐藏」设计语义
 
+### 五轴代码复核与整改（2026-10-05 复核会话，签收前置）
+
+- 四切片并行外派独立评审（每片独立上下文，五轴：correctness / readability / architecture / security / performance，纯函数日期数学逐行推演）：
+  - F1 `737a07b`：**Approve**。最高风险点（EXPERT 键序与 RATING_LABELS 对齐、ts-fsrs Grade 枚举传递）逐行核实无错位；2 条 Optional（`study.tsx` 主键高亮魔法数字 `3` 改 `Rating.Good`、统计页聚焦读与开关写毫秒级 UI 竞态，库数据无损）不阻塞，留后续顺手处理。
+  - F2 `feb896e`：**Approve**。`entry_morpheme.entry_id` 语义经发布物 schema 实测为 entry.id、与新查询绑定一致；空态（两表 0 行）隐藏路径正确。3 条 Nit（注释相对路径、FlatList key 含索引、`localeCompare` 未固定 locale）不阻塞。
+  - F3 `2f78aeb`：**Approve**。futureLoad 日界/归桶/与 isDue 口径逐行推演无误（图上今日桶 ⊇ 任意时刻实际复习队列，UTC 日末收敛，属日粒度预测固有语义，报告如实披露）。采纳整改：基准线渲染层级（原被高柱遮挡，「贯穿」名不副实）、补 day-30 边界用例；聚焦刷新留 M-G。
+  - F4 `4203fd7`：**Request changes → 已整改**。两 Required：① 列宽公式漏算卡片内边距（页边距 16×2 + 卡片内边距 16×2 = 64，原只减 32），宽屏设备热力图溢出卡片边界——已修；② 带时区偏移的 ISO 戳按字符串前缀切日、违反声明的 UTC 切日约定且与 futureLoad 先例不一致——已修（整串 `Date.parse` 归一 UTC、无时区后缀补 Z），同函数加 `isValidYmd` 显式日历校验堵「2 月 30 日」被 `Date.parse` 静默回卷。另采纳：热力格 `hitSlop=6` 扩触达区、移除 HeatmapCard 未使用的 `today` prop。
+- 整改后门禁复跑（复核会话实跑）：`pnpm lint` / `pnpm typecheck` 0 问题，**vitest 129/129（13 文件）**。较上文 126 的 +3 为复核新增用例：futureLoad day-30 窗口边界、heatmapData +08:00 偏移切日、heatmapData Feb 30 回卷拒绝；上文 126 为整改前快照，以本节 129 为准
+- 整改与本章补记同一 commit 入库；beta.20 apk（40,496,595 B）构建于整改前，整改未触及 F1/F2 与 F4 UI 逻辑的运行时行为差异仅为布局与解析修正，**apk 需重打后发内测**（见 §8）
+
 ## §3 测试证据
 
 - 本地三道门禁为数字出处（本会话实跑命令：`pnpm lint`、`pnpm typecheck`、`pnpm test`；vitest Test Files 13 passed (13)、Tests 126 passed (126)，380ms，三命令 exit 均 0）；另单独复跑 `pnpm vitest run tests/stats-core.test.ts tests/rating-core.test.ts tests/morpheme-core.test.ts` 确认 48/48（stats 35 / rating 6 / morpheme 7）

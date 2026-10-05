@@ -147,6 +147,12 @@ describe('futureLoad', () => {
     expect(r.daily30[7]).toEqual({ day: '2026-10-12', count: 1 });
   });
 
+  it('counts the last day of the 30-day window and ignores the day after', () => {
+    const r = futureLoad(['2026-11-03T12:00:00.000Z', '2026-11-04T00:00:00.000Z'], '2026-10-05');
+    expect(r.daily30[29]).toEqual({ day: '2026-11-03', count: 1 });
+    expect(r.daily30.every((d, i) => (i === 29 ? d.count === 1 : d.count === 0))).toBe(true);
+  });
+
   it('ignores dues beyond 30 days', () => {
     const r = futureLoad(['2026-11-20T00:00:00.000Z'], '2026-10-05');
     expect(r.todayCount).toBe(0);
@@ -240,6 +246,19 @@ describe('heatmapData', () => {
     const r = heatmapData(['not-a-date', '', '2026-13-99 10:00:00', '2026-09-29 09:00:00'], '2026-09-29');
     expect(r.days[364].count).toBe(1);
     expect(r.days.every((d) => d.count <= 1)).toBe(true);
+  });
+
+  it('cuts +08:00-offset ISO timestamps by their UTC instant, not the local prefix', () => {
+    const r = heatmapData(['2026-09-29T07:00:00+08:00'], '2026-09-29');
+    // 该时刻 = 2026-09-28T23:00Z，按 UTC 落 09-28
+    expect(r.days[363]).toMatchObject({ day: '2026-09-28', count: 1, level: 1 });
+    expect(r.days[364].count).toBe(0);
+  });
+
+  it('skips impossible calendar dates like Feb 30 instead of rolling them forward', () => {
+    const r = heatmapData(['2026-02-30T10:00:00.000Z'], '2026-09-29');
+    expect(r.days.find((d) => d.day === '2026-03-02')?.count).toBe(0);
+    expect(r.days.every((d) => d.count === 0)).toBe(true);
   });
 
   it('covers leap day across a leap-year window', () => {

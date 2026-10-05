@@ -224,7 +224,7 @@ export default function StatsScreen() {
               <WeekBars rows={practiceHistory} activeColor={t.accentWarning} />
             </View>
 
-            <HeatmapCard data={heatmap} today={todayKey(new Date())} />
+            <HeatmapCard data={heatmap} />
 
             <View style={styles.card}>
               <View style={styles.reminderHead}>
@@ -455,14 +455,14 @@ function WeekBars({ rows, activeColor }: { rows: { day: string; count: number }[
 const HEAT_RAMP_LIGHT = ['#fde68a', '#fbbf24', '#d97706', '#b45309'];
 const HEAT_RAMP_DARK = ['#78350f', '#b45309', '#f59e0b', '#fcd34d'];
 
-function HeatmapCard({ data, today }: { data: HeatmapResult | null; today: string }) {
+function HeatmapCard({ data }: { data: HeatmapResult | null }) {
   const t = useTheme();
   const scheme = useResolvedScheme();
   const styles = makeStyles(t);
   const { width } = useWindowDimensions();
-  // 53 列（约 365 天）自适应屏宽：减去页边距 32 与 52 个列间隙
+  // 53 列（约 365 天）自适应屏宽：减去页边距 16×2 + 卡片内边距 16×2 共 64，再减 52 个列间隙
   const gap = 2;
-  const cell = Math.max(3, Math.floor((width - 32 - 52 * gap) / 53));
+  const cell = Math.max(3, Math.floor((width - 64 - 52 * gap) / 53));
   const [selected, setSelected] = useState<string | null>(null);
   const ramp = scheme === 'dark' ? HEAT_RAMP_DARK : HEAT_RAMP_LIGHT;
   const selectedDay = selected ? data?.days.find((d) => d.day === selected) : undefined;
@@ -491,6 +491,7 @@ function HeatmapCard({ data, today }: { data: HeatmapResult | null; today: strin
                   <Pressable
                     key={d.day}
                     onPress={() => setSelected(selected === d.day ? null : d.day)}
+                    hitSlop={6}
                     style={[
                       styles.heatCell,
                       {
@@ -548,7 +549,6 @@ function LoadBars({
               <View key={d.day} style={styles.dayCol}>
                 <Text style={styles.dayCount}>{d.count || ''}</Text>
                 <View style={styles.dayBarTrack}>
-                  {baselineY > 0 ? <View style={[styles.baselineLine, { bottom: baselineY }]} /> : null}
                   <View
                     style={[
                       styles.dayBar,
@@ -558,6 +558,7 @@ function LoadBars({
                       },
                     ]}
                   />
+                  {baselineY > 0 ? <View style={[styles.baselineLine, { bottom: baselineY }]} /> : null}
                 </View>
                 <Text style={[styles.dayLabel, isToday && styles.dayLabelToday]}>{isToday ? '今' : d.day.slice(8)}</Text>
               </View>

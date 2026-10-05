@@ -135,6 +135,12 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3 | 4 {
   return 4;
 }
 
+/** 日历有效性：Date.parse 会把 2 月 30 日静默回卷到 3 月，先显式校验月/日再解析。 */
+function isValidYmd(y: number, mo: number, d: number): boolean {
+  if (mo < 1 || mo > 12) return false;
+  return d >= 1 && d <= new Date(Date.UTC(y, mo, 0)).getUTCDate();
+}
+
 /**
  * 学习热力图（F4）：输入 review_log 时间戳列表（SQLite「YYYY-MM-DD HH:MM:SS」UTC 或 ISO 8601，
  * kind 两类都算打卡，由调用方一并传入）与今天（YYYY-MM-DD），输出近 365 天（含今天）逐日计数
@@ -144,10 +150,18 @@ export function heatLevel(count: number): 0 | 1 | 2 | 3 | 4 {
 export function heatmapData(timestamps: readonly string[], today: string): HeatmapResult {
   const counts = new Map<string, number>();
   for (const ts of timestamps) {
-    const m = ts.match(/^(\d{4}-\d{2}-\d{2})/);
-    if (!m) continue;
-    const day = m[1];
-    if (Number.isNaN(Date.parse(`${day}T00:00:00.000Z`))) continue;
+    const m = ts.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m || !isValidYmd(Number(m[1]), Number(m[2]), Number(m[3]))) continue;
+    let day = m[0];
+    if (ts.includes('T')) {
+      // ISO 8601 整串按 UTC 切日：带偏移的戳先归一到 UTC（无时区后缀视为 UTC），
+      // 不能按字符串前缀切，否则 +08:00 的「本地次日」会错落一天
+      const normalized = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(ts) ? ts : `${ts}Z`;
+      const ms = Date.parse(normalized);
+      if (Number.isNaN(ms)) continue;
+      day = new Date(ms).toISOString().slice(0, 10);
+    }
+    // 无 T：SQLite datetime('now') 格式，日期部分即 UTC 日
     counts.set(day, (counts.get(day) ?? 0) + 1);
   }
 
