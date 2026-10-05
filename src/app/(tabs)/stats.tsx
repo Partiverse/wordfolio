@@ -6,6 +6,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { ChevronForwardIcon, FlameIcon, PencilIcon, SparkIcon, StarIcon, TrophyIcon } from '@/components/icons';
 import {
   getDailyGoal,
+  getDueTimes,
   getPracticeDaily,
   getPracticeTotal,
   getReviewHistory,
@@ -17,7 +18,7 @@ import {
 } from '@/db/study';
 import { disableReminder, enableReminder, getReminderSetting, REMINDER_TIMES, type ReminderSetting } from '@/utils/reminders';
 import { parseRatingMode, RATING_MODE_KEY, type RatingMode } from '@/study/rating-core';
-import { bestStreak, bucketHistory, computeStreak, todayKey } from '@/study/stats-core';
+import { bestStreak, bucketHistory, computeStreak, futureLoad, todayKey, type FutureLoadResult } from '@/study/stats-core';
 import { useFavorites } from '@/stores/favorites';
 import { useThemeStore } from '@/stores/theme';
 import { useTheme } from '@/theme/tokens';
@@ -39,6 +40,9 @@ export default function StatsScreen() {
   const [history, setHistory] = useState<{ day: string; count: number }[]>([]);
   const [practiceHistory, setPracticeHistory] = useState<{ day: string; count: number }[]>([]);
   const [practiceTotal, setPracticeTotal] = useState(0);
+  // 未来复习压力（F3）：7/30 天切换的逐日到期量 + 今日基准线
+  const [forecast, setForecast] = useState<FutureLoadResult | null>(null);
+  const [forecastRange, setForecastRange] = useState<7 | 30>(7);
   const [reminder, setReminder] = useState<ReminderSetting | null>(null);
   const [reminderBusy, setReminderBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -59,8 +63,8 @@ export default function StatsScreen() {
   useEffect(() => {
     let alive = true;
     const day = todayKey(new Date());
-    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting(), getPracticeTotal(), getPracticeDaily(7)])
-      .then(([s, goal, rows, rem, practices, practiceRows]) => {
+    Promise.all([getStudyStats(), getDailyGoal(day), getReviewHistory(7), getReminderSetting(), getPracticeTotal(), getPracticeDaily(7), getDueTimes()])
+      .then(([s, goal, rows, rem, practices, practiceRows, dueTimes]) => {
         if (!alive) return;
         setStats(s);
         setHistory(bucketHistory(rows, 7, day));
@@ -69,6 +73,7 @@ export default function StatsScreen() {
         setPracticeTotal(practices);
         setTarget(goal.target);
         setDoneToday(goal.completed);
+        setForecast(futureLoad(dueTimes, day));
       })
       .catch((e) => {
         console.warn('[stats] load failed', e);
@@ -195,6 +200,38 @@ export default function StatsScreen() {
             <View style={styles.card}>
               <Text style={styles.cardTitle}>近 7 日自由练习</Text>
               <WeekBars rows={practiceHistory} activeColor={t.accentWarning} />
+            </View>
+
+            <View style={styles.card}>
+              <View style={styles.reminderHead}>
+                <Text style={styles.cardTitle}>未来复习压力</Text>
+                <View style={styles.rangeRow}>
+                  {([7, 30] as const).map((r) => {
+                    const active = r === forecastRange;
+                    return (
+                      <Pressable
+                        key={r}
+                        onPress={() => setForecastRange(r)}
+                        style={[styles.rangeBtn, active && styles.rangeBtnActive]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                      >
+                        <Text style={[styles.rangeText, active && styles.rangeTextActive]}>{r} 天</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+              {forecast ? (
+                <LoadBars
+                  rows={forecastRange === 7 ? forecast.daily7 : forecast.daily30}
+                  baseline={forecast.todayCount}
+                  today={todayKey(new Date())}
+                />
+              ) : null}
+              <Text style={styles.cardHint}>
+                今日到期 {forecast?.todayCount ?? 0} 张（基准线，含逾期未复习）；越往后到期越分散说明排期越健康。
+              </Text>
             </View>
 
             <View style={styles.card}>
@@ -389,6 +426,54 @@ function WeekBars({ rows, activeColor }: { rows: { day: string; count: number }[
   );
 }
 
+/** 未来复习压力逐日柱状（F3）：7 天单行 / 30 天每行 15 列两行；
+ *  每列轨道内按今日量画一条贯穿基准线，今日列高亮。 */
+function LoadBars({
+  rows,
+  baseline,
+  today,
+}: {
+  rows: { day: string; count: number }[];
+  baseline: number;
+  today: string;
+}) {
+  const t = useTheme();
+  const styles = makeStyles(t);
+  const max = Math.max(1, ...rows.map((r) => r.count));
+  const baselineY = baseline > 0 ? Math.max(4, (baseline / max) * 44) : 0;
+  const chunks: { day: string; count: number }[][] = [];
+  for (let i = 0; i < rows.length; i += 15) chunks.push(rows.slice(i, i + 15));
+  return (
+    <View style={{ gap: 8 }}>
+      {chunks.map((chunk, ci) => (
+        <View key={ci} style={styles.weekRow}>
+          {chunk.map((d) => {
+            const isToday = d.day === today;
+            return (
+              <View key={d.day} style={styles.dayCol}>
+                <Text style={styles.dayCount}>{d.count || ''}</Text>
+                <View style={styles.dayBarTrack}>
+                  {baselineY > 0 ? <View style={[styles.baselineLine, { bottom: baselineY }]} /> : null}
+                  <View
+                    style={[
+                      styles.dayBar,
+                      {
+                        height: Math.max(4, (d.count / max) * 44),
+                        backgroundColor: d.count > 0 ? (isToday ? t.primary : t.accentPrimary) : t.bgSurfaceElevated,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.dayLabel, isToday && styles.dayLabelToday]}>{isToday ? '今' : d.day.slice(8)}</Text>
+              </View>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function Bar({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
   const t = useTheme();
   const styles = makeStyles(t);
@@ -472,6 +557,22 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
     dayBarTrack: { height: 48, width: '70%', justifyContent: 'flex-end' },
     dayBar: { width: '100%', borderRadius: 4 },
     dayLabel: { color: t.textMuted, fontSize: 10 },
+    dayLabelToday: { color: t.primary, fontWeight: '700' },
+    baselineLine: { position: 'absolute', left: 0, right: 0, height: 2, borderRadius: 1, backgroundColor: t.destructive },
+    rangeRow: { flexDirection: 'row', gap: 8 },
+    rangeBtn: {
+      paddingHorizontal: 12,
+      minHeight: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.borderStrong,
+      backgroundColor: t.bgSurface,
+    },
+    rangeBtnActive: { backgroundColor: t.primary, borderColor: t.primary },
+    rangeText: { color: t.textSecondary, fontSize: 12, fontWeight: '700' },
+    rangeTextActive: { color: t.primaryForeground },
     barRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     barLabel: { color: t.textSecondary, fontSize: 13, width: 52 },
     barTrack: { flex: 1, height: 8, borderRadius: 999, backgroundColor: t.bgSurfaceElevated, overflow: 'hidden' },

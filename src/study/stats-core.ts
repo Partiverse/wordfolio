@@ -57,6 +57,59 @@ export function formatReviewTime(utc: string): string {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 未来复习压力逐日桶（F3）。 */
+export interface LoadDay {
+  day: string; // YYYY-MM-DD（UTC，与 review_card.due 的 ISO 时间戳同轨）
+  count: number;
+}
+
+export interface FutureLoadResult {
+  /** 基准线：今日到期量（due ≤ 今天的全部排期卡，含历史逾期与未学新卡）。 */
+  todayCount: number;
+  /** 未来 7 天逐日到期量，含今日、升序；首日 = todayCount。 */
+  daily7: LoadDay[];
+  /** 未来 30 天逐日到期量，含今日、升序；首日 = todayCount。 */
+  daily30: LoadDay[];
+}
+
+/**
+ * 复习压力预测（F3）：输入 review_card.due（ISO 8601）集合与今天（YYYY-MM-DD），
+ * 输出未来 7/30 天逐日到期量。逾期卡（due 在今天之前）与未学新卡（due=建卡时刻，
+ * 已成过去）都压进今日桶——它们和今日到期一样占用今天的队列（同 isDue 语义）；
+ * 超出 30 天的忽略；无法解析的时间戳跳过。日期一律按 UTC 切日，与 todayKey /
+ * bucketHistory 的现有约定一致。
+ */
+export function futureLoad(dueTimes: readonly string[], today: string): FutureLoadResult {
+  let overdue = 0;
+  const buckets = new Map<string, number>();
+  for (const due of dueTimes) {
+    const ms = Date.parse(due);
+    if (Number.isNaN(ms)) continue;
+    const day = new Date(ms).toISOString().slice(0, 10);
+    if (day < today) overdue += 1;
+    else buckets.set(day, (buckets.get(day) ?? 0) + 1);
+  }
+  const base = new Date(`${today}T00:00:00.000Z`);
+  const seq = (days: number): LoadDay[] => {
+    const out: LoadDay[] = [];
+    for (let i = 0; i < days; i += 1) {
+      const d = new Date(base);
+      d.setUTCDate(d.getUTCDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      out.push({
+        day: key,
+        count: i === 0 ? overdue + (buckets.get(key) ?? 0) : (buckets.get(key) ?? 0),
+      });
+    }
+    return out;
+  };
+  return {
+    todayCount: overdue + (buckets.get(today) ?? 0),
+    daily7: seq(7),
+    daily30: seq(30),
+  };
+}
+
 /**
  * 把稀疏的逐日计数补成连续 N 天序列（今天在最后）：缺记录的日子补 0，
  * 便于统计页画 7 日柱状图。

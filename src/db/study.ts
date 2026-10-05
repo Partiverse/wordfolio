@@ -438,6 +438,16 @@ export async function getStudyStats(): Promise<StudyStats> {
   };
 }
 
+/* ---------- 未来复习压力（F3） ---------- */
+
+/** 全部学习排期卡（review_card）的 due 原始时间戳，未来压力预测的数据源。
+ *  自由练习（review_log.kind='practice'）不动排期、不写 review_card，天然不进统计。 */
+export async function getDueTimes(): Promise<string[]> {
+  const db = await openLearningDb();
+  const rows = await db.getAllAsync<{ due: string }>('SELECT due FROM review_card');
+  return rows.map((r) => r.due);
+}
+
 /* ---------- 学习数据备份：导出 / 导入（切片 E1） ---------- */
 
 /** 导出五表全量（favorite / review_card / review_log / daily_goal / settings）为 JSON 字符串，

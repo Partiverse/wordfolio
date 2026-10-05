@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { bestStreak, bucketHistory, computeStreak, formatReviewTime, todayKey } from '../src/study/stats-core';
+import { bestStreak, bucketHistory, computeStreak, formatReviewTime, futureLoad, todayKey } from '../src/study/stats-core';
 
 describe('computeStreak', () => {
   it('returns 0 with no history', () => {
@@ -100,5 +100,85 @@ describe('bucketHistory', () => {
   it('ignores rows outside the window', () => {
     const out = bucketHistory([{ day: '2026-01-01', count: 9 }], 2, '2026-09-29');
     expect(out.map((r) => r.count)).toEqual([0, 0]);
+  });
+});
+
+describe('futureLoad', () => {
+  it('returns all-zero 7/30 day sequences for empty input', () => {
+    const r = futureLoad([], '2026-10-05');
+    expect(r.todayCount).toBe(0);
+    expect(r.daily7).toEqual([
+      { day: '2026-10-05', count: 0 },
+      { day: '2026-10-06', count: 0 },
+      { day: '2026-10-07', count: 0 },
+      { day: '2026-10-08', count: 0 },
+      { day: '2026-10-09', count: 0 },
+      { day: '2026-10-10', count: 0 },
+      { day: '2026-10-11', count: 0 },
+    ]);
+    expect(r.daily30).toHaveLength(30);
+    expect(r.daily30.every((d) => d.count === 0)).toBe(true);
+    expect(r.daily30[29].day).toBe('2026-11-03');
+  });
+
+  it('keeps the cross-midnight boundary: 23:59:59.999 vs next day 00:00:00', () => {
+    const r = futureLoad(['2026-10-05T23:59:59.999Z', '2026-10-06T00:00:00.000Z'], '2026-10-05');
+    expect(r.todayCount).toBe(1);
+    expect(r.daily7[0]).toEqual({ day: '2026-10-05', count: 1 });
+    expect(r.daily7[1]).toEqual({ day: '2026-10-06', count: 1 });
+    expect(r.daily7[2].count).toBe(0);
+  });
+
+  it('clamps overdue dues into today (baseline = overdue + due today)', () => {
+    const r = futureLoad(
+      ['2026-10-01T00:00:00.000Z', '2026-10-04T12:00:00.000Z', '2026-10-05T08:00:00.000Z'],
+      '2026-10-05',
+    );
+    expect(r.todayCount).toBe(3);
+    expect(r.daily7[0]).toEqual({ day: '2026-10-05', count: 3 });
+    expect(r.daily7[1].count).toBe(0);
+  });
+
+  it('respects the 7-day window edge: day 6 inside, day 7 only in the 30-day window', () => {
+    const r = futureLoad(['2026-10-11T12:00:00.000Z', '2026-10-12T12:00:00.000Z'], '2026-10-05');
+    expect(r.daily7[6]).toEqual({ day: '2026-10-11', count: 1 });
+    expect(r.daily7.slice(0, 6).every((d) => d.count === 0)).toBe(true);
+    expect(r.daily30[6]).toEqual({ day: '2026-10-11', count: 1 });
+    expect(r.daily30[7]).toEqual({ day: '2026-10-12', count: 1 });
+  });
+
+  it('ignores dues beyond 30 days', () => {
+    const r = futureLoad(['2026-11-20T00:00:00.000Z'], '2026-10-05');
+    expect(r.todayCount).toBe(0);
+    expect(r.daily30.every((d) => d.count === 0)).toBe(true);
+  });
+
+  it('handles a month boundary between today and the following days', () => {
+    const r = futureLoad(['2026-10-31T23:00:00.000Z', '2026-11-01T01:00:00.000Z'], '2026-10-31');
+    expect(r.daily7.map((d) => d.day)).toEqual([
+      '2026-10-31',
+      '2026-11-01',
+      '2026-11-02',
+      '2026-11-03',
+      '2026-11-04',
+      '2026-11-05',
+      '2026-11-06',
+    ]);
+    expect(r.daily7[0].count).toBe(1);
+    expect(r.daily7[1].count).toBe(1);
+  });
+
+  it('sums multiple dues falling on the same day', () => {
+    const r = futureLoad(
+      ['2026-10-06T01:00:00.000Z', '2026-10-06T09:00:00.000Z', '2026-10-06T23:00:00.000Z'],
+      '2026-10-05',
+    );
+    expect(r.daily7[1]).toEqual({ day: '2026-10-06', count: 3 });
+  });
+
+  it('skips malformed timestamps instead of throwing', () => {
+    const r = futureLoad(['not-a-date', '', '2026-10-06T00:00:00.000Z'], '2026-10-05');
+    expect(r.todayCount).toBe(0);
+    expect(r.daily7[1]).toEqual({ day: '2026-10-06', count: 1 });
   });
 });
