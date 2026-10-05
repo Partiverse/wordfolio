@@ -6,6 +6,9 @@ import { Rating, type Grade } from 'ts-fsrs';
 
 export const RATING_MODE_KEY = 'ratingMode';
 
+/** 主评分键（「认识」=Good）：三/四档共有的首键，学习屏评分按钮高亮锚点。 */
+export const PRIMARY_GRADE: Grade = Rating.Good;
+
 export const RATING_MODES = ['simple', 'expert'] as const;
 
 export type RatingMode = (typeof RATING_MODES)[number];

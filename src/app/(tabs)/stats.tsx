@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -71,6 +71,10 @@ export default function StatsScreen() {
   const [doneToday, setDoneToday] = useState(0);
   // 评分模式偏好（settings 表 key='ratingMode'，F1）：默认三档自评，开「专家模式」后翻卡四键
   const [ratingMode, setRatingMode] = useState<RatingMode>('simple');
+  // 聚焦读 vs 乐观写的竞态防护：写序号在每次乐观切换时自增，聚焦读发起时记下当时序号，
+  // resolve 时若期间发生过切换（序号已变）或在途写尚未落库（pending），则放弃覆盖本地状态。
+  const ratingWriteSeqRef = useRef(0);
+  const ratingWritePendingRef = useRef(false);
   const { ids: favoriteIds, hydrate } = useFavorites();
   const themePreference = useThemeStore((s) => s.preference);
   const setThemePreference = useThemeStore((s) => s.setPreference);
@@ -118,13 +122,17 @@ export default function StatsScreen() {
     setDailyTarget(day, next).catch(() => {});
   }, []);
 
-  // 聚焦即恢复评分偏好：学习屏/备份导入改了库，切回统计页立即反映
+  // 聚焦即恢复评分偏好：学习屏/备份导入改了库，切回统计页立即反映；
+  // 在途/期间发生的本地切换不回退（见 ratingWriteSeqRef 注释）
   useFocusEffect(
     useCallback(() => {
       let alive = true;
+      const readSeq = ratingWriteSeqRef.current;
       getSetting(RATING_MODE_KEY)
         .then((v) => {
-          if (alive) setRatingMode(parseRatingMode(v));
+          if (!alive) return;
+          if (ratingWriteSeqRef.current !== readSeq || ratingWritePendingRef.current) return;
+          setRatingMode(parseRatingMode(v));
         })
         .catch(() => {});
       return () => {
@@ -133,11 +141,19 @@ export default function StatsScreen() {
     }, []),
   );
 
-  // 切开关即写入 settings，学习屏聚焦时恢复；落库失败静默（本次会话内仍生效）
+  // 切开关即写入 settings，学习屏聚焦时恢复；落库失败静默（本次切换不被回退，
+  // 下次聚焦读会以 DB 真值为准重新对齐）
   const toggleExpertMode = useCallback((on: boolean) => {
     const next: RatingMode = on ? 'expert' : 'simple';
+    const writeSeq = ++ratingWriteSeqRef.current;
+    ratingWritePendingRef.current = true;
     setRatingMode(next);
-    void setSetting(RATING_MODE_KEY, next).catch(() => {});
+    setSetting(RATING_MODE_KEY, next)
+      .catch(() => {})
+      .finally(() => {
+        // 仅当没有更新的切换在途时才解除 pending，避免早完成的旧写清掉新写的标记
+        if (ratingWriteSeqRef.current === writeSeq) ratingWritePendingRef.current = false;
+      });
   }, []);
 
   const streak = stats ? computeStreak(stats.activeDays, todayKey(new Date())) : 0;

@@ -40,6 +40,7 @@ import {
 import {
   gradesForMode,
   parseRatingMode,
+  PRIMARY_GRADE,
   RATING_LABELS,
   RATING_MODE_KEY,
   type RatingMode,
@@ -422,12 +423,12 @@ export default function StudyScreen() {
             ? gradesForMode(ratingMode).map((g) => (
                 <Pressable
                   key={g}
-                  style={[styles.gradeBtn, g === 3 && styles.gradeBtnPrimary]}
+                  style={[styles.gradeBtn, g === PRIMARY_GRADE && styles.gradeBtnPrimary]}
                   onPress={() => rate(g)}
                   disabled={busy}
                   accessibilityRole="button"
                 >
-                  <Text style={[styles.gradeText, g === 3 && styles.gradeTextPrimary]}>
+                  <Text style={[styles.gradeText, g === PRIMARY_GRADE && styles.gradeTextPrimary]}>
                     {RATING_LABELS[g]}
                   </Text>
                 </Pressable>

@@ -54,4 +54,14 @@ describe('sortMorphemes', () => {
     ]);
     expect(sorted.map((m) => m.morpheme)).toEqual(['a', 'x']);
   });
+
+  it('breaks ties with fixed en collation (case-insensitive order, locale-independent)', () => {
+    // en collation 按字母序排大小写混合词（'A' 在 'b' 前）；码点比较会给出相反结果（'b'(0x62) < 'A'(0x41)），
+    // 固定 'en' locale 后与设备 locale 无关
+    const sorted = sortMorphemes([
+      { morpheme: 'b', kind: 'root' },
+      { morpheme: 'A', kind: 'root' },
+    ]);
+    expect(sorted.map((m) => m.morpheme)).toEqual(['A', 'b']);
+  });
 });

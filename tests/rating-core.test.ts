@@ -4,6 +4,7 @@ import { Rating } from 'ts-fsrs';
 import {
   gradesForMode,
   parseRatingMode,
+  PRIMARY_GRADE,
   RATING_LABELS,
   RATING_MODES,
 } from '../src/study/rating-core';
@@ -43,5 +44,12 @@ describe('gradesForMode', () => {
     expect(RATING_LABELS[Rating.Easy]).toBe('简单');
     expect(RATING_LABELS[Rating.Hard]).toBe('模糊');
     expect(RATING_LABELS[Rating.Again]).toBe('忘记');
+  });
+
+  it('primary grade is Good and present in every mode (highlight anchor)', () => {
+    expect(PRIMARY_GRADE).toBe(Rating.Good);
+    for (const m of RATING_MODES) {
+      expect(gradesForMode(m)).toContain(PRIMARY_GRADE);
+    }
   });
 });

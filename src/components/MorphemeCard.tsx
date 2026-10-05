@@ -17,8 +17,9 @@ export function MorphemeCard({ morphemes }: { morphemes: MorphemeDetail[] }) {
         <LayersIcon color={t.textSecondary} size={16} />
         <Text style={styles.title}>词根词缀</Text>
       </View>
-      {morphemes.map((m, i) => (
-        <View key={`${m.morpheme}-${i}`} style={styles.row}>
+      {morphemes.map((m) => (
+        // morpheme 在发布物 schema 中 UNIQUE（且 entry_morpheme 主键防同词条重复关联），本身即唯一 key
+        <View key={m.morpheme} style={styles.row}>
           <Text style={styles.kind}>{morphemeKindZh(m.kind)}</Text>
           <Text style={styles.morpheme}>{m.morpheme}</Text>
           {m.glossZh ? <Text style={styles.gloss}>{m.glossZh}</Text> : null}

@@ -162,7 +162,7 @@ export async function getEntryDetail(entryId: number): Promise<EntryDetail | nul
   );
 
   // 词根词缀（F2）：经 entry_morpheme 关联取 morpheme；展示排序（前缀→词根→后缀）在 JS 侧做，
-  // 复用 ../db/morpheme-core.ts 的纯函数，SQL 内不依赖自定义函数。
+  // 复用 ./morpheme-core.ts 的纯函数，SQL 内不依赖自定义函数。
   const morphemeRows = await db.getAllAsync<MorphemeDetail>(
     `SELECT m.morpheme        AS morpheme,
             m.kind            AS kind,

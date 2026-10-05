@@ -29,6 +29,6 @@ export function sortMorphemes<T extends MorphemeLike>(list: readonly T[]): T[] {
   return [...list].sort(
     (a, b) =>
       morphemeDisplayOrder(a.kind) - morphemeDisplayOrder(b.kind) ||
-      a.morpheme.localeCompare(b.morpheme),
+      a.morpheme.localeCompare(b.morpheme, 'en'),
   );
 }
