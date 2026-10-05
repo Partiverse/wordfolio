@@ -27,11 +27,19 @@ M-H 区间（`47cb134..95efcbd`）3 个 commit（H1 双目标拆分、H2 新卡�
 
 **范围说明**：H2 的 random 档语义为「每次聚焦重建时随机一次」而非全天稳定洗牌——这是刻意取舍（队列重建频率低、rng 注入保证可测），已在逻辑树 §5.2 注明。H2 的 favoriteFirst 受 favorite 表粒度（entry_id 级）约束，语义为词条级优先而非义项级，已如实披露于上表。
 
+### 五轴代码复核与整改（2026-10-05 复核会话，签收前置）
+
+- 两切片并行外派独立评审（每片独立上下文，五轴 + 迁移/竞态/洗牌逐场景推演）：
+  - H1 `09af8c8`：**Approve**。核心风险点全部核实正确：迁移回填语义（ALTER 成功时回填无 WHERE 安全、建表与 ALTER DEFAULT 一致）、buildTodayQueue 双上限边界（0/负数/单边不足/拼接顺序）、评分入账 state 在评分前捕获无错列路径、旧签名调用方全仓零残留、备份往返幂等。留档不阻塞：try-ALTER 的 `.catch(() => false)` 会吞真实迁移故障（与 review_log.kind 既有约定一致，建议 PRAGMA table_info 显式探测）、统计页双目标编辑存在同帧交叉捕获竞态（G3 守卫未覆盖 target，概率低且下次聚焦对齐）、负值 target 无钳制、DEFAULT_NEW_TARGET 双份定义、建议补 Learning 态归复习段的边界测试——均建议后续小 commit 清偿。
+  - H2 `6bb6933`：**Request changes → 已整改**。纯函数 orderNewCards（Fisher–Yates 均匀性 node 实测、null 居尾与 SQL 口径一致）、favorite entry_id 语义对齐、竞态守卫共用推演、segChip 无障碍均过关。两 Required 均为「默认配置下功能感知不到」的真问题：① favoriteFirst 候选池是词频序 LIMIT（默认 newTarget=5 时仅 20 个义项），收藏的低频词永远不在池内、收藏优先失效——已修：收藏词条义项经新增 `getSeedCandidatesForEntries`（参数化 IN 查询，`repository.ts`）显式并入候选池，收藏段在前、词频段去重补齐；② random 档池=补卡量（20=20）时洗牌对选卡零作用且出场序被 sortForQueue 抹平——已修：候选池扩为 4×补卡量（`need * 4`），random 真正作用于「选哪些词入卡」。顺手采纳：统计页双偏好聚焦恢复改为逐项 `.catch(() => null)` 兜底（原 Promise.all 一个读失败连累另一个）；三档 hint 文案补充生效条件说明。
+- 整改后门禁复跑（复核会话实跑）：`pnpm lint` / `pnpm typecheck` 0 问题，**vitest 151/151（14 文件）**，用例数与上文一致（候选池/合流为组件内取数胶水，纯函数层用例已覆盖三档排序语义）
+- 整改 commit `5b0f9e2`；beta.22 apk 已于整改后重打（见 §2 产物行更新），冒烟 d 项（收藏优先）语义以重打包为准
+
 ## §2 验收证据
 
 - **门禁**（2026-10-05 本报告撰写会话实跑）：`pnpm lint` 0 问题（exit 0，expo lint）、`pnpm typecheck` 干净（exit 0，tsc --noEmit）、**vitest 151/151 通过（14 文件，422ms，exit 0）**：merge-core 14 / stats-core 45 / quiz-core 11 / morpheme-core 8 / queue 8 / rating-core 7 / fsrs-core 13 / search 14 / upstream-core 4 / learning-core 5 / mode-core 3 / theme-core 5 / order-core 11 / upgrade 3
 - **用例账目**（M-G 整改后 138 → M-H 151，+13，逐 commit 可溯）：H1 fsrs-core 原「keeps only due cards and respects the daily limit」单上限用例改写为仅复习上限用例 + 新增双上限用例「caps due review cards by reviewLimit and new cards by newLimit, reviews first」（12→13，新用例含 3 个断言场景）、merge-core 补旧版备份回填用例「backfills daily_goal new columns for legacy backups (min(target_count,5) / 0)」（13→14）（`09af8c8`）→ H2 新增 order-core 11 例（parseNewCardOrder 三档解析回退 + orderNewCards 恒 0/恒 0.5 固定随机源确定性输出等）（`6bb6933`）
-- **产物**：`dist/wordfolio-0.1.0-beta.22-arm64.apk`（40,508,151 B，2026-10-05 23:13），已含全部 M-H 改动；本切片 aapt2（build-tools 36.0.0）复核 versionName 一致
+- **产物**：`dist/wordfolio-0.1.0-beta.22-arm64.apk`（40,510,243 B，2026-10-05 23:47，复核整改后重打，gradle 增量 22s），已含全部 M-H 改动与复核整改；aapt2（build-tools 36.0.0）复核 versionName=0.1.0-beta.22 一致。上文 40,508,151 B（23:13）为整改前包，内测以重打包为准
 - **代码闭环**：H2 新增纯函数模块 order-core 无 RN 依赖、配 vitest 文件；新增 SQL 全参数绑定（getSeedCandidates 仅 LIMIT ? 占位），无字符串拼接，符合 Mimosa「外部输入必须参数绑定、不得拼接」约束；零新增依赖（`git diff --name-only 47cb134..95efcbd` 无 package.json）
 - **逻辑树核对与更新**（本切片执行）：头部版本行 beta.21→beta.22（M-H 调度体验）；§3.1 daily_goal 行补 new_target/new_completed 双列与写入方、settings 行补 newCardOrder 键；§5.2 今日队列补双上限/先复习后新学/补卡三档顺序语义（含 random 一次性语义与 gather 作用边界）；§5.4 FSRS 参数表补注：每日目标为产品层队列上限、不属于 FSRS 参数，本表冻结状态不变；§4 屏级规格学习/统计两行的取数与写入描述同步；§7 组件清单补 order-core 行并更新 fsrs-core/merge-core/stats-core 用例计数。（注：任务说明称更新「§5.3/§5.4」，实际逻辑树 §5.3 为真人发音链，双目标拆分与先复习后新学、新卡顺序语义的内容归属是 §5.2 今日队列，按内容落位并在此说明）
 
