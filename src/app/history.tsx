@@ -58,10 +58,12 @@ export default function HistoryScreen() {
 
   const last30Total = buckets.reduce((sum, b) => sum + b.count, 0);
   // 日=逐日原样；周/月=纯函数前端聚合（输入已是补零连续序列，空期自然为 0）。
+  // key 用完整日期/聚合标签：日档的展示标签只取「几号」，跨月会同名，不能作 key。
   const columns =
     granularity === 'day'
-      ? buckets.map((b) => ({ label: b.day.slice(8), count: b.count }))
+      ? buckets.map((b) => ({ key: b.day, label: b.day.slice(8), count: b.count }))
       : aggregateTrend(buckets, granularity).map((b) => ({
+          key: b.label,
           label: granularity === 'week' ? b.label.slice(5) : `${Number(b.label.slice(5, 7))}月`,
           count: b.count,
         }));
@@ -119,7 +121,7 @@ export default function HistoryScreen() {
             </View>
             <View style={styles.weekRow}>
               {columns.map((c, i) => (
-                <View key={`${granularity}-${c.label}`} style={styles.dayCol}>
+                <View key={c.key} style={styles.dayCol}>
                   <Text style={styles.dayCount}>{c.count || ''}</Text>
                   <View style={styles.dayBarTrack}>
                     <View

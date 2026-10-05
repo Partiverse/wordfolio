@@ -327,6 +327,20 @@ describe('aggregateTrend', () => {
     ]);
   });
 
+  it('assigns a Friday Jan 1 to the previous ISO year (2021-01-01 → 2020-W53)', () => {
+    // ISO 年可倒退：2021-01-01 是周五，本周四在 2020-12-31，故属 2020-W53
+    const r = aggregateTrend(
+      [
+        { day: '2020-12-31', count: 1 },
+        { day: '2021-01-01', count: 2 },
+      ],
+      'week',
+    );
+    expect(r).toEqual([
+      { label: '2020-W53', start: '2020-12-31', end: '2021-01-01', count: 3 },
+    ]);
+  });
+
   it('splits months across the year boundary', () => {
     const r = aggregateTrend(
       [

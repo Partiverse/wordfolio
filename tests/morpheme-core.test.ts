@@ -56,12 +56,12 @@ describe('sortMorphemes', () => {
   });
 
   it('breaks ties with fixed en collation (case-insensitive order, locale-independent)', () => {
-    // en collation 按字母序排大小写混合词（'A' 在 'b' 前）；码点比较会给出相反结果（'b'(0x62) < 'A'(0x41)），
-    // 固定 'en' locale 后与设备 locale 无关
+    // en collation 大小写混排（'a' 在 'B' 前）；纯码点序相反（'B'(0x42) < 'a'(0x61)）。
+    // 该用例能区分「固定 en collation」与「回退到码点序」的回归；固定 'en' 后与设备 locale 无关。
     const sorted = sortMorphemes([
-      { morpheme: 'b', kind: 'root' },
-      { morpheme: 'A', kind: 'root' },
+      { morpheme: 'B', kind: 'root' },
+      { morpheme: 'a', kind: 'root' },
     ]);
-    expect(sorted.map((m) => m.morpheme)).toEqual(['A', 'b']);
+    expect(sorted.map((m) => m.morpheme)).toEqual(['a', 'B']);
   });
 });

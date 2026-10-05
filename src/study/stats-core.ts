@@ -201,7 +201,7 @@ export type TrendGranularity = 'week' | 'month';
 export interface TrendBucket {
   /** 周 = ISO 周标签「YYYY-Www」（周一起始，ISO 8601）；月 = 自然月「YYYY-MM」。 */
   label: string;
-  /** 桶内实际有贡献的首/末日（窗口截断时早于/晚于完整周期，照实显示）。 */
+  /** 桶在窗口内的首/末日（首尾桶为不完整周期时早于/晚于完整周期；补零日也计入）。 */
   start: string;
   end: string;
   count: number;
@@ -221,7 +221,7 @@ function isoWeekKey(day: string): string {
 /**
  * 复习历史按周/月聚合：输入 bucketHistory 补零后的连续逐日序列（升序，窗口内空日已补 0，
  * 因此窗口内每个周期必然出现、无数据的周期自然为 0），按 ISO 周（周一起始）或自然月分组求和。
- * 周期键变化即开新桶，首尾桶只覆盖窗口内的不完整周期，照实显示（start/end 取实际贡献日）。
+ * 周期键变化即开新桶，首尾桶只覆盖窗口内的不完整周期，照实显示（start/end 取窗口内首/末日）。
  * 日期一律按 UTC 切日（同 bucketHistory 约定）。
  */
 export function aggregateTrend(

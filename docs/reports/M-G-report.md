@@ -28,6 +28,15 @@ M-G 区间（`bf8310a..67da8a1`）4 个 commit（G1 聚焦刷新、G2 周月聚�
 - **代码闭环**：G2 新增纯函数 aggregateTrend 无 RN 依赖、配 vitest 文件；G1/G3 均零新增 SQL（`git diff bf8310a..67da8a1 -- src/db/study.ts` 为空，数据层只读复用），符合 Mimosa「外部输入必须参数绑定、不得拼接」约束
 - **逻辑树核对与更新**（本切片执行）：本切片同步更新了功能逻辑树——头部版本行 beta.20→beta.21；§4 统计屏行补聚焦刷新与内联报错语义；§5.5 主键高亮改为引用 `PRIMARY_GRADE` 常量并注明竞态防护；§6 槽位表「复习历史完整曲线」行划掉「按周/月维度切换未做」注记（清偿 M-E/M-F 两轮报告注明的该条文档债）；§7 组件清单更新 stats-core（aggregateTrend，44 例）、rating-core（PRIMARY_GRADE，7 例）、morpheme-core（固定 en locale，8 例）
 
+### 五轴代码复核与整改（2026-10-05 复核会话，签收前置）
+
+- 三切片并行外派独立评审（每片独立上下文，五轴 + 竞态/日期算法逐状态推演）：
+  - G1 `732668e`：**Approve**。四条硬性要求（单一触发、静默刷新不闪屏、跨午夜 todayKey 重算、失败不清数据）逐行核实落地；快速切 tab 的过期响应已被 per-focus `alive` 守卫正确拦截。3 条 Optional（极端重复 focus 事件下可加请求序号守卫、挂屏跨午夜的渲染期 today 与数据 day 混用属既有行为、首载失败无重试按钮）与聚焦全量拉取的性能评估（千行级毫秒级，可接受）均不阻塞。
+  - G2 `05f211d`：**Request changes → 已整改**。ISO 周算法经 node 实测 13 组边界全对、自然月分组正确、日档渲染与改动前等价；唯一 Required 为本 diff 引入的真回归：柱状列 key 用展示标签（日档 `label` 只取「几号」），30 日窗口跨月时同名「01」产生重复 React key——已修（key 改用完整日期 `b.day` / 聚合标签 `b.label`，history.tsx）。顺手采纳：补 ISO 年倒退用例（2021-01-01 → 2020-W53）、修正 TrendBucket 注释措辞。
+  - G3 `747a8d0`：**Approve**。竞态双闸四场景（读在途切换/切 tab 竞写/正常读回/写失败对齐）逐状态推演全过，多重切换下 pending 不卡死；PRIMARY_GRADE 行为零变化经 ts-fsrs 枚举实证；无 scope creep。1 条 Required 为测试自身缺陷：collation 用例 `'A'`/`'b'` 的注释事实错误（码点序本就 'A' 在前），用例区分力不足——已改 `'a'`/`'B'`（码点序与 en collation 真相反）并修正注释。1 条 Nit（stats.tsx:125 注释提及的「备份导入写入 ratingMode」当前无此写入方，守卫属前瞻防御）留档不改。
+- 整改后门禁复跑（复核会话实跑）：`pnpm lint` / `pnpm typecheck` 0 问题，**vitest 138/138（13 文件）**，较上文 137 的 +1 为 ISO 年倒退用例；上文 137 为整改前快照，以本节 138 为准
+- 整改与本章补记同一 commit 入库；beta.21 apk（40,499,583 B）构建于整改前，整改涉及 history.tsx key 与测试，UI 视觉与数据行为不变，apk 无需重打；如需绝对一致可在 push 前重打
+
 ## §3 测试证据
 
 - 本地三道门禁为数字出处（本会话实跑命令：`pnpm lint`、`pnpm typecheck`、`pnpm test`；vitest Test Files 13 passed (13)、Tests 137 passed (137)，406ms，三命令 exit 均 0）
