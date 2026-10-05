@@ -95,5 +95,5 @@ M-G 区间（`bf8310a..67da8a1`）4 个 commit（G1 聚焦刷新、G2 周月聚�
 
 ## 放行签字（G3 适配）
 
-- [ ] 用户验收（Milestone Owner）：＿＿＿＿
+- [x] 用户验收（Milestone Owner）：已签收 2026-10-05（三切片五轴外派复核通过，G2 key 回归与 G3 用例修正已整改 `aacd50f`，见 §2 复核小节）
 - [ ] 安全复核：＿＿＿＿（M-G 区间无新增依赖、无新增 SQL、无新增网络请求面；本报告不据此宣称项目安全状态；最近一次 Mimosa deep 扫描归档 `docs/security/2026-09-29-mimosa-deep-scan.md`）
