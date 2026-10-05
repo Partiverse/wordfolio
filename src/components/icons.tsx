@@ -26,3 +26,4 @@ export const TrophyIcon = icon('trophy-outline');
 export const PencilIcon = icon('pencil-outline');
 export const SaveIcon = icon('save-outline'); // 导出学习数据到本机文件
 export const DownloadIcon = icon('download-outline'); // 从本机备份文件导入
+export const LayersIcon = icon('layers-outline'); // 词根词缀区块（morpheme 拆解）

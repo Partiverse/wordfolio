@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { SenseCard } from '@/components/SenseCard';
+import { MorphemeCard } from '@/components/MorphemeCard';
 import { ChevronBackIcon, StarIcon, StarOutlineIcon, VolumeIcon } from '@/components/icons';
 import { PlayToast } from '@/components/PlayToast';
 import { TtsBanner } from '@/components/TtsHint';
@@ -123,6 +124,9 @@ export default function EntryDetailScreen() {
           ) : null}
           {entry.etymologyZh ? <Text style={styles.etym}>{entry.etymologyZh}</Text> : null}
         </View>
+
+        {/* 词根词缀：发布物 morpheme 表有数据才渲染，无数据整块隐藏 */}
+        {entry.morphemes.length ? <MorphemeCard morphemes={entry.morphemes} /> : null}
 
         {/* 义项卡列表 */}
         <View style={styles.senseList}>

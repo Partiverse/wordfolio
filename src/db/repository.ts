@@ -2,6 +2,7 @@
 // 发布物 DB 引导见 ./release.ts；查询构造纯函数见 ./search.ts。
 
 import { openReleaseDb, type SearchHit } from './release';
+import { sortMorphemes } from './morpheme-core';
 import { buildFtsMatch, buildLikePattern, isTooShort, shouldUseLikeFallback } from './search';
 
 export interface BrowseItem {
@@ -47,6 +48,13 @@ export interface FormDetail {
   tags: string[];
 }
 
+export interface MorphemeDetail {
+  morpheme: string;
+  kind: string;
+  glossZh: string | null;
+  origin: string | null;
+}
+
 export interface EntryDetail {
   entryId: number;
   headword: string;
@@ -58,6 +66,7 @@ export interface EntryDetail {
   collinsStar: number | null;
   isOxford3000: boolean;
   forms: FormDetail[];
+  morphemes: MorphemeDetail[];
   senses: SenseDetail[];
 }
 
@@ -152,6 +161,19 @@ export async function getEntryDetail(entryId: number): Promise<EntryDetail | nul
     [entryId],
   );
 
+  // 词根词缀（F2）：经 entry_morpheme 关联取 morpheme；展示排序（前缀→词根→后缀）在 JS 侧做，
+  // 复用 ../db/morpheme-core.ts 的纯函数，SQL 内不依赖自定义函数。
+  const morphemeRows = await db.getAllAsync<MorphemeDetail>(
+    `SELECT m.morpheme        AS morpheme,
+            m.kind            AS kind,
+            m.gloss_zh        AS glossZh,
+            m.origin          AS origin
+       FROM morpheme m
+       JOIN entry_morpheme em ON em.morpheme_id = m.id
+      WHERE em.entry_id = ?`,
+    [entryId],
+  );
+
   const senses = await db.getAllAsync<SenseDetail>(
     `SELECT id, stable_id AS stableId, pos, label_zh AS labelZh,
             definition_en AS definitionEn, definition_zh AS definitionZh,
@@ -189,6 +211,7 @@ export async function getEntryDetail(entryId: number): Promise<EntryDetail | nul
     collinsStar: entry.collinsStar,
     isOxford3000: entry.isOxford3000 === 1,
     forms: formRows.map((f) => ({ form: f.form, tags: safeParseTags(f.tags) })),
+    morphemes: sortMorphemes(morphemeRows),
     senses,
   };
 }
