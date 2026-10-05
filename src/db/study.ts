@@ -67,13 +67,30 @@ async function bootstrap(): Promise<SQLite.SQLiteDatabase> {
     CREATE TABLE IF NOT EXISTS daily_goal (
       day            TEXT PRIMARY KEY,
       target_count   INTEGER NOT NULL,
-      completed_count INTEGER NOT NULL DEFAULT 0
+      completed_count INTEGER NOT NULL DEFAULT 0,
+      new_target     INTEGER NOT NULL DEFAULT 5,
+      new_completed  INTEGER NOT NULL DEFAULT 0
     );
   `);
   // 旧库迁移：review_log 建表时无 kind 列（beta.15 及之前），补列；已存在则忽略
   await db
     .execAsync('ALTER TABLE review_log ADD COLUMN kind TEXT NOT NULL DEFAULT \'review\'')
     .catch(() => {});
+  // 旧库迁移（F5 双目标拆分）：daily_goal 建表时无 new_target/new_completed 两列（beta.21 及之前），
+  // 补列；已存在则忽略。老行回填 new_target = min(target_count, 5)：原单目标里新卡通常只占小头，
+  // 拆分后复习目标沿用原 target_count、新学目标给 5 的保守份额，升级后总量不突变（beta.21 之前
+  // target_count 默认 20，拆后复习 20 + 新学 5）；new_completed 归零（历史完成数无法回溯拆分）。
+  // 新装库建表语句已含两列（DEFAULT 5/0），ALTER 失败 → 跳过回填，语义一致。
+  const goalSplitMigrated = await db
+    .execAsync(
+      `ALTER TABLE daily_goal ADD COLUMN new_target INTEGER NOT NULL DEFAULT 5;
+       ALTER TABLE daily_goal ADD COLUMN new_completed INTEGER NOT NULL DEFAULT 0;`,
+    )
+    .then(() => true)
+    .catch(() => false);
+  if (goalSplitMigrated) {
+    await db.runAsync('UPDATE daily_goal SET new_target = min(target_count, 5)');
+  }
   return db;
 }
 
@@ -381,32 +398,70 @@ export async function setSetting(key: string, value: string): Promise<void> {
   );
 }
 
-/* ---------- 每日目标 ---------- */
+/* ---------- 每日目标（F5 双目标：target_count=复习目标，new_target=新学目标） ---------- */
 
-export async function getDailyGoal(day: string): Promise<{ target: number; completed: number }> {
+/** 首日无记录时的复习目标默认值（沿用原单目标默认）。 */
+const DEFAULT_TARGET = 20;
+/** 首日无记录时的新学目标默认值（与建表列 DEFAULT 一致）。 */
+export const DEFAULT_NEW_TARGET = 5;
+
+export interface DailyGoal {
+  /** 复习目标（到期非新卡的上限） */
+  target: number;
+  completed: number;
+  /** 新学目标（新卡的上限） */
+  newTarget: number;
+  newCompleted: number;
+}
+
+export async function getDailyGoal(day: string): Promise<DailyGoal> {
   const db = await openLearningDb();
-  const row = await db.getFirstAsync<{ target_count: number; completed_count: number }>(
-    'SELECT target_count, completed_count FROM daily_goal WHERE day = ?',
+  const row = await db.getFirstAsync<{
+    target_count: number;
+    completed_count: number;
+    new_target: number;
+    new_completed: number;
+  }>(
+    'SELECT target_count, completed_count, new_target, new_completed FROM daily_goal WHERE day = ?',
     [day],
   );
-  return { target: row?.target_count ?? 20, completed: row?.completed_count ?? 0 };
+  return {
+    target: row?.target_count ?? DEFAULT_TARGET,
+    completed: row?.completed_count ?? 0,
+    newTarget: row?.new_target ?? DEFAULT_NEW_TARGET,
+    newCompleted: row?.new_completed ?? 0,
+  };
 }
 
-export async function setDailyCompleted(day: string, completed: number, target: number): Promise<void> {
+export async function setDailyCompleted(
+  day: string,
+  completed: number,
+  target: number,
+  newCompleted: number,
+  newTarget: number,
+): Promise<void> {
   const db = await openLearningDb();
   await db.runAsync(
-    `INSERT INTO daily_goal (day, target_count, completed_count) VALUES (?, ?, ?)
-     ON CONFLICT(day) DO UPDATE SET completed_count = excluded.completed_count, target_count = excluded.target_count`,
-    [day, target, completed],
+    `INSERT INTO daily_goal (day, target_count, completed_count, new_target, new_completed)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(day) DO UPDATE SET
+       completed_count = excluded.completed_count,
+       target_count = excluded.target_count,
+       new_completed = excluded.new_completed,
+       new_target = excluded.new_target`,
+    [day, target, completed, newTarget, newCompleted],
   );
 }
 
-export async function setDailyTarget(day: string, target: number): Promise<void> {
+export async function setDailyTarget(day: string, target: number, newTarget: number): Promise<void> {
   const db = await openLearningDb();
   await db.runAsync(
-    `INSERT INTO daily_goal (day, target_count, completed_count) VALUES (?, ?, 0)
-     ON CONFLICT(day) DO UPDATE SET target_count = excluded.target_count`,
-    [day, target],
+    `INSERT INTO daily_goal (day, target_count, completed_count, new_target, new_completed)
+     VALUES (?, ?, 0, ?, 0)
+     ON CONFLICT(day) DO UPDATE SET
+       target_count = excluded.target_count,
+       new_target = excluded.new_target`,
+    [day, target, newTarget],
   );
 }
 
@@ -424,7 +479,7 @@ export interface StudyStats {
 export async function getStudyStats(): Promise<StudyStats> {
   const db = await openLearningDb();
   const days = await db.getAllAsync<{ day: string; completed: number }>(
-    'SELECT day, completed_count AS completed FROM daily_goal WHERE completed_count > 0 ORDER BY day',
+    'SELECT day, completed_count AS completed FROM daily_goal WHERE completed_count > 0 OR new_completed > 0 ORDER BY day',
   );
   const states = await db.getAllAsync<{ state: number; n: number }>(
     'SELECT state, COUNT(*) AS n FROM review_card GROUP BY state',
@@ -478,7 +533,7 @@ export async function exportLearningData(): Promise<string> {
     'SELECT stable_id, rating, due_after, reviewed_at, kind FROM review_log ORDER BY id',
   );
   const daily_goal = await db.getAllAsync<DailyGoalRow>(
-    'SELECT day, target_count, completed_count FROM daily_goal ORDER BY day',
+    'SELECT day, target_count, completed_count, new_target, new_completed FROM daily_goal ORDER BY day',
   );
   const settings = await db.getAllAsync<SettingRow>('SELECT key, value FROM settings ORDER BY key');
 
@@ -562,8 +617,8 @@ export async function importLearningData(json: string): Promise<ImportResult> {
     }
     for (const row of goalPlan.toWrite) {
       await db.runAsync(
-        'INSERT INTO daily_goal (day, target_count, completed_count) VALUES (?, ?, ?)',
-        [row.day, row.target_count, row.completed_count],
+        'INSERT INTO daily_goal (day, target_count, completed_count, new_target, new_completed) VALUES (?, ?, ?, ?, ?)',
+        [row.day, row.target_count, row.completed_count, row.new_target, row.new_completed],
       );
     }
     for (const row of settingPlan.toWrite) {

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
-import type { Grade } from 'ts-fsrs';
+import { State, type Grade } from 'ts-fsrs';
 
 import { VolumeIcon, WarnIcon } from '@/components/icons';
 import { PlayToast } from '@/components/PlayToast';
@@ -32,7 +32,6 @@ import { shouldShowBlankExercise } from '@/study/upstream-core';
 import {
   buildTodayQueue,
   gradeCard,
-  isDue,
   newCard,
   queueProgress,
   type StoredCard,
@@ -51,6 +50,7 @@ import { playWordAudio, prefetchWordAudio } from '@/utils/wordAudio';
 import { useTheme } from '@/theme/tokens';
 
 const DEFAULT_TARGET = 20;
+const DEFAULT_NEW_TARGET = 5; // 与 src/db/study.ts 的 DEFAULT_NEW_TARGET 一致（首日无记录时）
 const SEED_BATCH = 20;
 // 学习模式记忆（settings 表 key='studyMode'，E3）：切模式即写入，聚焦重建时恢复
 const STUDY_MODE_KEY = 'studyMode';
@@ -67,6 +67,9 @@ export default function StudyScreen() {
   const [revealed, setRevealed] = useState(false);
   const [completed, setCompleted] = useState(0);
   const [target, setTarget] = useState(DEFAULT_TARGET);
+  // F5 双目标：新学进度独立于复习进度（daily_goal.new_completed / new_target）
+  const [newCompleted, setNewCompleted] = useState(0);
+  const [newTarget, setNewTarget] = useState(DEFAULT_NEW_TARGET);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
@@ -113,24 +116,29 @@ export default function StudyScreen() {
           setRatingMode(savedRating);
           const goal = await getDailyGoal(day);
           const stored = await getReviewCards();
-          const dueCount = stored.filter((c) => isDue(c, now)).length;
+          // F5 双目标分口径：复习缺口无法人为补（只能等排期到期），
+          // 只有新学缺口（存量新卡 < newTarget）按词频补新卡
+          const newCount = stored.filter((c) => c.state === State.New).length;
 
           let all = stored;
-          if (dueCount < goal.target) {
+          if (newCount < goal.newTarget) {
+            // 复习缺口无法人为补（只能等排期到期），只有新学缺口按词频补新卡
             const existing = new Set(stored.map((c) => c.stableId));
-            const candidates = (await getSeedSenseIds(goal.target * 4)).filter((id) => !existing.has(id));
-            const need = Math.max(goal.target - dueCount, SEED_BATCH);
+            const candidates = (await getSeedSenseIds(goal.newTarget * 4)).filter((id) => !existing.has(id));
+            const need = Math.max(goal.newTarget - newCount, SEED_BATCH);
             const fresh = candidates.slice(0, need).map((id) => newCard(id, now));
             if (fresh.length) {
               await bulkUpsertReviewCards(fresh);
               all = [...stored, ...fresh];
             }
           }
-          const todayQueue = buildTodayQueue(all, goal.target, now);
+          const todayQueue = buildTodayQueue(all, goal.target, goal.newTarget, now);
           const content = await getStudySenses(todayQueue.map((c) => c.stableId));
           if (!alive) return;
           setTarget(goal.target);
           setCompleted(goal.completed);
+          setNewTarget(goal.newTarget);
+          setNewCompleted(goal.newCompleted);
           setQueue(spreadByHeadword(todayQueue, (c) => content.get(c.stableId)?.headword ?? c.stableId));
           setSenses(content);
           // 自由练习轮：从已学卡随机抽（与正式排期无关，每轮不同）
@@ -155,7 +163,11 @@ export default function StudyScreen() {
 
   const current = queue[0];
   const sense = current ? senses.get(current.stableId) : undefined;
-  const progress = useMemo(() => queueProgress(completed, target), [completed, target]);
+  // 进度条按两目标合计口径（复习 + 新学各自的 done/total 相加）
+  const progress = useMemo(
+    () => queueProgress(completed + newCompleted, target + newTarget),
+    [completed, target, newCompleted, newTarget],
+  );
 
   // 自由练习（练习/听音/拼写）：独立于卡片正式队列
   const practiceCurrent = practiceQueue[practiceIndex] ?? null;
@@ -197,10 +209,14 @@ export default function StudyScreen() {
         const next = gradeCard(current, grade, now);
         await upsertReviewCard(next);
         await logReview(current.stableId, grade, next.due);
-        const nextCompleted = completed + 1;
-        await setDailyCompleted(todayKey(now), nextCompleted, target);
+        // F5 分列入账：评分前是 New 卡记 new_completed，否则记 completed（review_log 照旧追加）
+        const isNew = current.state === State.New;
+        const nextCompleted = isNew ? completed : completed + 1;
+        const nextNewCompleted = isNew ? newCompleted + 1 : newCompleted;
+        await setDailyCompleted(todayKey(now), nextCompleted, target, nextNewCompleted, newTarget);
         setQueue((prev) => prev.slice(1));
         setCompleted(nextCompleted);
+        setNewCompleted(nextNewCompleted);
         setRevealed(false);
       } catch (e) {
         setError(String(e));
@@ -208,7 +224,7 @@ export default function StudyScreen() {
         setBusy(false);
       }
     },
-    [current, busy, completed, target],
+    [current, busy, completed, target, newCompleted, newTarget],
   );
 
   // 练习/听音/拼写：只记 review_log（kind='practice'），不动 FSRS 排期与今日进度——
@@ -302,7 +318,7 @@ export default function StudyScreen() {
         <Text style={styles.progressText}>
           {quizMode
             ? `本轮 ${practiceIndex}/${practiceQueue.length || PRACTICE_ROUND} · 自由练习`
-            : `今日 ${completed}/${target} · 剩 ${queue.length}`}
+            : `今日 复习 ${completed}/${target} · 新学 ${newCompleted}/${newTarget} · 剩 ${queue.length}`}
         </Text>
       </View>
 
@@ -335,10 +351,12 @@ export default function StudyScreen() {
           <ActivityIndicator color={t.primary} style={{ marginTop: 40 }} />
         )
       ) : flipFinished ? (
-        completed > 0 ? (
+        completed + newCompleted > 0 ? (
           <View style={styles.centerBox}>
             <Text style={styles.doneTitle}>今天完成了</Text>
-            <Text style={styles.doneSub}>已复习 {completed} 个义项。明天再来，记忆曲线会安排下次出现时间。</Text>
+            <Text style={styles.doneSub}>
+              已复习 {completed} 个、新学 {newCompleted} 个义项。明天再来，记忆曲线会安排下次出现时间。
+            </Text>
           </View>
         ) : (
           <View style={styles.centerBox}>

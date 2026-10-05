@@ -44,6 +44,8 @@ import { useResolvedScheme, useTheme } from '@/theme/tokens';
 import type { ThemePreference } from '@/theme/theme-core';
 
 const TARGET_OPTIONS = [10, 20, 30, 50];
+// F5 双目标：新学目标独立一档（新卡负担小、按词频补新，默认 5 与 learning.db 列 DEFAULT 一致）
+const NEW_TARGET_OPTIONS = [5, 10, 20, 30];
 
 const THEME_OPTIONS: { value: ThemePreference; label: string }[] = [
   { value: 'light', label: '浅色' },
@@ -69,6 +71,9 @@ export default function StatsScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [target, setTarget] = useState(20);
   const [doneToday, setDoneToday] = useState(0);
+  // F5 双目标：新学目标/完成数独立于复习目标（daily_goal.new_target / new_completed）
+  const [newTarget, setNewTarget] = useState(5);
+  const [newDoneToday, setNewDoneToday] = useState(0);
   // 评分模式偏好（settings 表 key='ratingMode'，F1）：默认三档自评，开「专家模式」后翻卡四键
   const [ratingMode, setRatingMode] = useState<RatingMode>('simple');
   // 聚焦读 vs 乐观写的竞态防护：写序号在每次乐观切换时自增，聚焦读发起时记下当时序号，
@@ -102,6 +107,8 @@ export default function StatsScreen() {
           setPracticeTotal(practices);
           setTarget(goal.target);
           setDoneToday(goal.completed);
+          setNewTarget(goal.newTarget);
+          setNewDoneToday(goal.newCompleted);
           setForecast(futureLoad(dueTimes, day));
           setHeatmap(heatmapData(logTimes, day));
           setLoadError(null);
@@ -116,11 +123,23 @@ export default function StatsScreen() {
     }, []),
   );
 
-  const changeTarget = useCallback((next: number) => {
-    const day = todayKey(new Date());
-    setTarget(next);
-    setDailyTarget(day, next).catch(() => {});
-  }, []);
+  const changeTarget = useCallback(
+    (next: number) => {
+      const day = todayKey(new Date());
+      setTarget(next);
+      setDailyTarget(day, next, newTarget).catch(() => {});
+    },
+    [newTarget],
+  );
+
+  const changeNewTarget = useCallback(
+    (next: number) => {
+      const day = todayKey(new Date());
+      setNewTarget(next);
+      setDailyTarget(day, target, next).catch(() => {});
+    },
+    [target],
+  );
 
   // 聚焦即恢复评分偏好：学习屏/备份导入改了库，切回统计页立即反映；
   // 在途/期间发生的本地切换不回退（见 ratingWriteSeqRef 注释）
@@ -222,6 +241,7 @@ export default function StatsScreen() {
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>每日目标</Text>
+              <Text style={styles.targetLabel}>复习目标</Text>
               <View style={styles.targetRow}>
                 {TARGET_OPTIONS.map((opt) => {
                   const active = opt === target;
@@ -238,7 +258,26 @@ export default function StatsScreen() {
                   );
                 })}
               </View>
-              <Text style={styles.cardHint}>明天起按新目标组队列；今天已复习的进度不变。</Text>
+              <Text style={styles.targetLabel}>新学目标</Text>
+              <View style={styles.targetRow}>
+                {NEW_TARGET_OPTIONS.map((opt) => {
+                  const active = opt === newTarget;
+                  return (
+                    <Pressable
+                      key={opt}
+                      onPress={() => changeNewTarget(opt)}
+                      style={[styles.targetBtn, active && styles.targetBtnActive]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.targetText, active && styles.targetTextActive]}>{opt}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={styles.cardHint}>
+                队列先复习后新学；今天已新学 {newDoneToday}/{newTarget}。明天起按新目标组队列，今天的进度不变。
+              </Text>
             </View>
 
             <View style={styles.card}>
@@ -660,6 +699,7 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
     },
     aboutText: { color: t.accentPrimary, fontSize: 14, fontWeight: '600' },
     targetRow: { flexDirection: 'row', gap: 10 },
+    targetLabel: { color: t.textSecondary, fontSize: 13, fontWeight: '600' },
     targetBtn: {
       flex: 1,
       minHeight: 44,

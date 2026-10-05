@@ -34,6 +34,10 @@ export interface DailyGoalRow {
   day: string;
   target_count: number;
   completed_count: number;
+  /** F5 双目标拆分：新学目标（beta.22 起新增列；旧备份缺省时按 min(target_count, 5) 回填） */
+  new_target: number;
+  /** 新学完成数（旧备份缺省时回填 0） */
+  new_completed: number;
 }
 
 export interface SettingRow {
@@ -190,10 +194,21 @@ function validateReviewLogRow(raw: unknown, i: number): ReviewLogRow {
 function validateDailyGoalRow(raw: unknown, i: number): DailyGoalRow {
   const where = `data.daily_goal[${i}]`;
   if (!isPlainObject(raw)) throw new Error(`${where} 必须是对象`);
+  const target_count = reqInt(raw.target_count, `${where}.target_count`);
+  // 旧版备份（F5 拆分前导出）缺 new_target/new_completed 两列：宽容回填而非报错，
+  // 与旧库迁移同语义（new_target = min(target_count, 5)，new_completed = 0）
+  const new_target =
+    raw.new_target === undefined
+      ? Math.max(0, Math.min(5, target_count))
+      : reqInt(raw.new_target, `${where}.new_target`);
+  const new_completed =
+    raw.new_completed === undefined ? 0 : reqInt(raw.new_completed, `${where}.new_completed`);
   return {
     day: reqString(raw.day, `${where}.day`),
-    target_count: reqInt(raw.target_count, `${where}.target_count`),
+    target_count,
     completed_count: reqInt(raw.completed_count, `${where}.completed_count`),
+    new_target,
+    new_completed,
   };
 }
 

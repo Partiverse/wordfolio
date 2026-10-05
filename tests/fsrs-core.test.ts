@@ -77,18 +77,34 @@ describe('sortForQueue', () => {
 describe('buildTodayQueue', () => {
   const review = (id: string, due: string): StoredCard => ({ ...newCard(id, NOW), state: State.Review, due });
 
-  it('keeps only due cards and respects the daily limit', () => {
+  it('keeps only due review cards and respects the review limit', () => {
     const cards = [
       review('due-1', '2026-09-28T10:00:00.000Z'),
       review('due-2', '2026-09-28T11:00:00.000Z'),
       review('future', '2026-10-10T10:00:00.000Z'),
     ];
-    expect(buildTodayQueue(cards, 10, NOW).map((c) => c.stableId)).toEqual(['due-1', 'due-2']);
-    expect(buildTodayQueue(cards, 1, NOW).map((c) => c.stableId)).toEqual(['due-1']);
+    expect(buildTodayQueue(cards, 10, 0, NOW).map((c) => c.stableId)).toEqual(['due-1', 'due-2']);
+    expect(buildTodayQueue(cards, 1, 0, NOW).map((c) => c.stableId)).toEqual(['due-1']);
+  });
+
+  it('caps due review cards by reviewLimit and new cards by newLimit, reviews first', () => {
+    const cards = [
+      review('due-1', '2026-09-28T10:00:00.000Z'),
+      review('due-2', '2026-09-28T11:00:00.000Z'),
+      review('due-3', '2026-09-28T12:00:00.000Z'),
+      newCard('new-a', NOW),
+      newCard('new-b', NOW),
+    ];
+    const queue = buildTodayQueue(cards, 2, 1, NOW);
+    expect(queue.map((c) => c.stableId)).toEqual(['due-1', 'due-2', 'new-a']);
+    // 新学上限为 0 时只出复习卡
+    expect(buildTodayQueue(cards, 10, 0, NOW).map((c) => c.stableId)).toEqual(['due-1', 'due-2', 'due-3']);
+    // 复习上限为 0 时只出新卡
+    expect(buildTodayQueue(cards, 0, 10, NOW).map((c) => c.stableId)).toEqual(['new-a', 'new-b']);
   });
 
   it('returns empty for non-positive limits', () => {
-    expect(buildTodayQueue([newCard('s', NOW)], 0, NOW)).toEqual([]);
+    expect(buildTodayQueue([newCard('s', NOW)], 0, 0, NOW)).toEqual([]);
   });
 });
 

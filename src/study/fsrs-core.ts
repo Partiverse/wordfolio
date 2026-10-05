@@ -94,14 +94,28 @@ export function sortForQueue(cards: readonly StoredCard[]): StoredCard[] {
   });
 }
 
-/** 今日学习队列：取到期卡（含新卡）按上限截断。 */
+/**
+ * 今日学习队列（F5 双目标）：到期卡按类别分两个上限截断——
+ * 复习段（到期非新卡）截 reviewLimit，新学段（新卡）截 newLimit；
+ * 队列顺序保持复习在前、新学在后（两段各自经 sortForQueue 排序）。
+ */
 export function buildTodayQueue(
   cards: readonly StoredCard[],
-  dailyLimit: number,
+  reviewLimit: number,
+  newLimit: number,
   now: Date,
 ): StoredCard[] {
-  if (dailyLimit <= 0) return [];
-  return sortForQueue(cards.filter((c) => isDue(c, now))).slice(0, dailyLimit);
+  if (reviewLimit <= 0 && newLimit <= 0) return [];
+  const due = cards.filter((c) => isDue(c, now));
+  const review = sortForQueue(due.filter((c) => c.state !== State.New)).slice(
+    0,
+    Math.max(0, reviewLimit),
+  );
+  const fresh = sortForQueue(due.filter((c) => c.state === State.New)).slice(
+    0,
+    Math.max(0, newLimit),
+  );
+  return [...review, ...fresh];
 }
 
 /** 队列完成度（0–1），用于进度条。 */

@@ -33,7 +33,9 @@ function samplePayload(): BackupPayload {
           kind: 'review',
         },
       ],
-      daily_goal: [{ day: '2026-10-02', target_count: 20, completed_count: 5 }],
+      daily_goal: [
+        { day: '2026-10-02', target_count: 20, completed_count: 5, new_target: 10, new_completed: 3 },
+      ],
       settings: [{ key: 'reminder_hour', value: '8' }],
     },
   };
@@ -85,6 +87,30 @@ describe('parseBackup', () => {
     const payload = samplePayload();
     (payload.data.review_log[0] as { kind: unknown }).kind = 'quiz';
     expect(() => parseBackup(JSON.stringify(payload))).toThrow(/kind/);
+  });
+
+  it('backfills daily_goal new columns for legacy backups (min(target_count,5) / 0)', () => {
+    const legacy = samplePayload();
+    // 模拟旧版备份：序列化前去掉 new_target/new_completed（JSON.stringify 会丢 undefined 键）
+    const legacyRow = legacy.data.daily_goal[0] as Partial<typeof legacy.data.daily_goal[0]>;
+    delete legacyRow.new_target;
+    delete legacyRow.new_completed;
+    const parsed = parseBackup(JSON.stringify(legacy));
+    expect(parsed.data.daily_goal[0]).toEqual({
+      day: '2026-10-02',
+      target_count: 20,
+      completed_count: 5,
+      new_target: 5,
+      new_completed: 0,
+    });
+    // target_count 小于 5 时回填不越界
+    const small = samplePayload();
+    const smallRow = small.data.daily_goal[0] as Partial<typeof small.data.daily_goal[0]>;
+    smallRow.target_count = 3;
+    delete smallRow.new_target;
+    delete smallRow.new_completed;
+    const parsedSmall = parseBackup(JSON.stringify(small));
+    expect(parsedSmall.data.daily_goal[0].new_target).toBe(3);
   });
 });
 
