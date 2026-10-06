@@ -33,6 +33,17 @@ M-I 区间（`badf53d..9187cee`）3 个 commit（I1 范围筛选、I2 错题重�
 - **代码闭环**：I1 新增纯函数模块 scope-core 与 queue.filterPracticeScope/retryWrong 均无 RN/SQLite 依赖、配 vitest 文件；新增 SQL 全参数绑定（getStableIdsForEntries 500/批分片 `?` 占位、getCefrScopeStableIds `WHERE e.cefr = ?`），无字符串拼接值，符合 Mimosa「外部输入必须参数绑定、不得拼接」约束；跨库求交在 JS 侧完成，发布物侧仅只读查询；零新增依赖（`git diff --name-only badf53d..9187cee` 无 package.json）
 - **逻辑树核对与更新**（本切片执行）：头部版本行 beta.22→beta.23（M-I 自由练习增强）；§2 学习线包含项与衔接点补范围筛选/错题重试语义（仍只写 kind='practice'）；§3.1 settings 行补 practiceScope/practiceCefr 两键；§4 学习屏行读/写/特殊三栏同步（范围 chips、池 hint、空池空态、答错 hint、G3 守卫）；§5.2 自由练习段补范围筛选与轮内错题重试语义（含宽口径已学、词条级范围语义、队尾卡边界）；§6 槽位表新增两行已交付记录并注记词书选择行的练习侧覆盖；§7 组件清单补 scope-core 行、queue 行职责与用例数更新（4→20）
 
+### 五轴代码复核与整改（2026-10-06 复核会话，签收前置）
+
+- **冒烟 b 项缺陷已修**：根因为 `getStableIdsForEntries`（`src/db/repository.ts:335`）SQL 漏 `AS stableId` 列别名，`rows.map(r => r.stableId)` 全 undefined → 收藏 scopeSet 空集 → 池恒 0（同文件 exam/CEFR 查询带别名故正常，差异吻合）。修复一行 + sqlite3 验证；冒烟员逐项对照全部新查询无同类别名残留（复核员二次确认）
+- 两切片并行外派独立评审：
+  - I1 `168ba0e`：**Approve**。别名修复验证正确；全部新 SQL 列名/别名与类型断言逐一对照无残留；空集语义正确（空 Set → 空池 + 空态 hint 一致，不会误判「无收藏=无限制」）；重建时机无双拉/漏拉（React 19 批处理）；G3 守卫两键共用序号 node 时序推演正确、与统计页无 key 冲突；C2 存量值回退 A1 有测试锁定。留档：重建 effect 裸 catch 把 DB 故障呈现为空态（Optional）、DISTINCT 冗余（Nit）。
+  - I2 `0d576b4`：**Approve**。retryWrong 六场景 node 全轮走查无偏差（首错尾插游标保持、队尾卡只记账、二错不重排、retriedSet 三处生命周期闭环）；QuizCard 重试重挂载可正常作答；重试作答再记 practice log 与功能逻辑树 §8 打卡语义一致（有意设计）。留档：答错反馈延时窗口 × 重建竞态（既有模式延伸，Optional）、错题本「练习答对即订正」语义可辩（既有设计，FYI）。
+- 顺手采纳：补「非空范围集合零交集 → 空池」测试锁（queue.test.ts）。未采纳留档：I1 错误态区分、hint 常显（产品意图待定）等 Optional 项
+- 整改后门禁复跑（复核会话实跑）：`pnpm lint` / `pnpm typecheck` 0 问题，**vitest 169/169（15 文件）**，较上文 168 的 +1 为零交集用例；上文 168 为整改前快照，以本节 169 为准
+- **beta.23 apk 已修复后重打**（40,520,919 B，2026-10-06 12:42，aapt2 复核 versionName 一致），上文 40,520,907 B（11:49）为缺陷包，内测以重打包为准
+- **冒烟复考（12:42 重打包）**：收藏范围正常出题——11 次抽词 100% 落在收藏集 {a,in,i,it,on,be}、答题判定正确、错题重试顺带复验（答错计「本轮答错 1」）；截图 `i1-fav-scope-fixed.png` / `i1-fav-round-complete.png` / `i1-all-scope.png`。§3 原 b 项 FAIL 记录保留为历史事实，修复已由复考闭环；「该范围共 N 张」hint 为不足一轮/空态专属，非空范围不渲染（符合实现语义，字面验收项不可达）
+
 ## §3 测试证据
 
 - 本地三道门禁为数字出处（本会话实跑命令：`pnpm lint`、`pnpm typecheck`、`pnpm test`；vitest Test Files 15 passed (15)、Tests 168 passed (168)，595ms，三命令 exit 均 0）

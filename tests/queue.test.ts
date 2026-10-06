@@ -83,6 +83,10 @@ describe('filterPracticeScope', () => {
     expect(filterPracticeScope(pool, new Set())).toEqual([]);
   });
 
+  it('returns empty when a non-empty scope set has zero overlap with the pool', () => {
+    expect(filterPracticeScope(pool, new Set(['zz#1', 'zz#2']))).toEqual([]);
+  });
+
   it('does not mutate the input pool', () => {
     const snapshot = [...pool];
     filterPracticeScope(pool, new Set(['a#1']));

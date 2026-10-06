@@ -332,7 +332,7 @@ export async function getStableIdsForEntries(entryIds: readonly number[]): Promi
     const chunk = entryIds.slice(i, i + 500);
     const placeholders = chunk.map(() => '?').join(', ');
     const rows = await db.getAllAsync<{ stableId: string }>(
-      `SELECT DISTINCT stable_id FROM sense WHERE entry_id IN (${placeholders})`,
+      `SELECT DISTINCT stable_id AS stableId FROM sense WHERE entry_id IN (${placeholders})`,
       chunk,
     );
     out.push(...rows.map((r) => r.stableId));
