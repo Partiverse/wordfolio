@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { pickPracticeRound, spreadByHeadword } from '../src/study/queue';
+import { filterPracticeScope, pickPracticeRound, spreadByHeadword } from '../src/study/queue';
 
 interface Card {
   stableId: string;
@@ -59,5 +59,39 @@ describe('pickPracticeRound', () => {
     const cards = Array.from({ length: 30 }, (_, i) => c(i));
     const firsts = new Set(Array.from({ length: 40 }, () => pickPracticeRound(cards, 1)[0].stableId));
     expect(firsts.size).toBeGreaterThan(1);
+  });
+});
+
+describe('filterPracticeScope', () => {
+  const card = (id: string) => ({ stableId: id, headword: id.split('#')[0] });
+  const pool = [card('a#1'), card('b#1'), card('a#2'), card('c#1')];
+
+  it('passes through the whole pool (copy) when scope set is null/undefined', () => {
+    expect(filterPracticeScope(pool, null)).toEqual(pool);
+    expect(filterPracticeScope(pool, undefined)).toEqual(pool);
+    expect(filterPracticeScope(pool, null)).not.toBe(pool); // 不复用入参数组
+  });
+
+  it('keeps only cards whose stableId is in the scope set, preserving order', () => {
+    const scope = new Set(['b#1', 'c#1']);
+    expect(filterPracticeScope(pool, scope).map((x) => x.stableId)).toEqual(['b#1', 'c#1']);
+    const scope2 = new Set(['a#2', 'a#1']);
+    expect(filterPracticeScope(pool, scope2).map((x) => x.stableId)).toEqual(['a#1', 'a#2']);
+  });
+
+  it('returns empty for an empty scope set', () => {
+    expect(filterPracticeScope(pool, new Set())).toEqual([]);
+  });
+
+  it('does not mutate the input pool', () => {
+    const snapshot = [...pool];
+    filterPracticeScope(pool, new Set(['a#1']));
+    expect(pool).toEqual(snapshot);
+  });
+
+  it('composes with pickPracticeRound as the full pipeline (pool < n takes all)', () => {
+    const scope = new Set(['a#1', 'c#1']);
+    const round = pickPracticeRound(filterPracticeScope(pool, scope), 10);
+    expect(new Set(round.map((x) => x.stableId))).toEqual(scope);
   });
 });

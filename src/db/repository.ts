@@ -315,6 +315,56 @@ export async function getSeedCandidatesForEntries(
   return rows;
 }
 
+/* ---------- 练习范围集合（I1）----------
+ * 三个范围（收藏/考试/CEFR）在发布物侧都是「词条级」条件（exam_tag 是 entry_id 级、
+ * cefr 挂在 entry 上、favorite 是 entry_id 级），语义统一为「范围内词条的全部义项 stable_id」。
+ * 求交策略：这里只取范围集合本身（规模有界：考试 108 词条 / 单档 CEFR ≤ 328 词条 / 收藏为用户
+ * 自选），与已学卡（learning.db review_card，通常数百条内）的交集在 JS 侧由
+ * study/queue.ts filterPracticeScope 完成——避免反向「已学卡 IN 范围」随收藏量膨胀的分批复杂度。
+ */
+
+// 指定词条集的全部义项 stable_id（无 LIMIT；词条集按 500/批分片 IN，规避 SQLite 变量上限 999）。
+export async function getStableIdsForEntries(entryIds: readonly number[]): Promise<string[]> {
+  const out: string[] = [];
+  if (entryIds.length === 0) return out;
+  const db = await openReleaseDb();
+  for (let i = 0; i < entryIds.length; i += 500) {
+    const chunk = entryIds.slice(i, i + 500);
+    const placeholders = chunk.map(() => '?').join(', ');
+    const rows = await db.getAllAsync<{ stableId: string }>(
+      `SELECT DISTINCT stable_id FROM sense WHERE entry_id IN (${placeholders})`,
+      chunk,
+    );
+    out.push(...rows.map((r) => r.stableId));
+  }
+  return out;
+}
+
+// 考试范围：exam_tag 覆盖词条（entry_id 级）的全部义项。
+export async function getExamScopeStableIds(): Promise<string[]> {
+  const db = await openReleaseDb();
+  const rows = await db.getAllAsync<{ stableId: string }>(
+    `SELECT DISTINCT s.stable_id AS stableId
+       FROM sense s
+       JOIN exam_tag t ON t.entry_id = s.entry_id`,
+  );
+  return rows.map((r) => r.stableId);
+}
+
+// CEFR 范围：entry.cefr 等于所选档位的词条的全部义项；非法档位回空集（UI 侧 parse 已兜底）。
+export async function getCefrScopeStableIds(cefr: string): Promise<string[]> {
+  if (!(CEFR_VALUES as readonly string[]).includes(cefr)) return [];
+  const db = await openReleaseDb();
+  const rows = await db.getAllAsync<{ stableId: string }>(
+    `SELECT DISTINCT s.stable_id AS stableId
+       FROM sense s
+       JOIN entry e ON e.id = s.entry_id
+      WHERE e.cefr = ?`,
+    [cefr],
+  );
+  return rows.map((r) => r.stableId);
+}
+
 /**
  * 四选一干扰项：随机抽 other senses 的释义做选项。
  * 同词性优先（干扰更有效），词性候选不足时放宽到任意词性；

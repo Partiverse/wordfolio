@@ -45,3 +45,17 @@ export function spreadByHeadword<T extends SpreadableCard>(
 export function pickPracticeRound<T>(cards: readonly T[], n: number): T[] {
   return shuffle(cards).slice(0, Math.max(0, n));
 }
+
+/**
+ * 练习范围筛选（I1）：把自由练习抽题池从「已学卡全集」缩到「范围 ∩ 已学卡」。
+ * scopeStableIds 为 null/undefined 表示不设限（scope='all'，原样返回副本）；
+ * 否则只保留 stableId 命中范围集合的卡，保持入参相对顺序。纯函数：不改入参。
+ * 与 pickPracticeRound 组合即完整抽题管线：pickPracticeRound(filterPracticeScope(cards, set), n)。
+ */
+export function filterPracticeScope<T extends SpreadableCard>(
+  cards: readonly T[],
+  scopeStableIds: ReadonlySet<string> | null | undefined,
+): T[] {
+  if (!scopeStableIds) return [...cards];
+  return cards.filter((c) => scopeStableIds.has(c.stableId));
+}

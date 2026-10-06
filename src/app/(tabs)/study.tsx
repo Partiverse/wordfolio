@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -20,9 +20,12 @@ import {
   upsertReviewCard,
 } from '@/db/study';
 import {
+  getCefrScopeStableIds,
   getDistractorSenses,
+  getExamScopeStableIds,
   getSeedCandidates,
   getSeedCandidatesForEntries,
+  getStableIdsForEntries,
   getStudySenses,
   hasCefrData,
   hasExampleData,
@@ -34,8 +37,19 @@ import {
   parseNewCardOrder,
   type NewCardCandidate,
 } from '@/study/order-core';
-import { pickPracticeRound, spreadByHeadword } from '@/study/queue';
+import { filterPracticeScope, pickPracticeRound, spreadByHeadword } from '@/study/queue';
 import { parseStudyMode, type StudyMode } from '@/study/mode-core';
+import {
+  PRACTICE_CEFR_KEY,
+  PRACTICE_CEFR_LEVELS,
+  PRACTICE_SCOPE_KEY,
+  PRACTICE_SCOPE_LABELS,
+  PRACTICE_SCOPES,
+  parsePracticeCefr,
+  parsePracticeScope,
+  type PracticeCefr,
+  type PracticeScope,
+} from '@/study/scope-core';
 import { shouldShowBlankExercise } from '@/study/upstream-core';
 import {
   buildTodayQueue,
@@ -60,10 +74,18 @@ import { useTheme } from '@/theme/tokens';
 const DEFAULT_TARGET = 20;
 const DEFAULT_NEW_TARGET = 5; // 与 src/db/study.ts 的 DEFAULT_NEW_TARGET 一致（首日无记录时）
 const SEED_BATCH = 20;
+// 自由练习每轮题量（原组件内常量，I1 起范围重建 effect 也引用，上移模块级）
+const PRACTICE_ROUND = 10;
 // 学习模式记忆（settings 表 key='studyMode'，E3）：切模式即写入，聚焦重建时恢复
 const STUDY_MODE_KEY = 'studyMode';
 // 评分模式（settings 表 key='ratingMode'，F1）：默认三档自评；统计页开「专家模式」后翻卡四键
 // 键序与 FSRS 映射见 src/study/rating-core.ts（认识→Good、简单→Easy、模糊→Hard、忘记→Again）
+
+// I1 练习范围：四段选择（segChip 风格同源 history.tsx），档位文案与解析在 scope-core
+const PRACTICE_SCOPE_OPTIONS = PRACTICE_SCOPES.map((value) => ({
+  value,
+  label: PRACTICE_SCOPE_LABELS[value],
+}));
 
 export default function StudyScreen() {
   const t = useTheme();
@@ -87,7 +109,20 @@ export default function StudyScreen() {
   // 自由练习（练习/听音/拼写）：独立于卡片正式队列，只记 review_log 不动 FSRS 排期
   const [practiceQueue, setPracticeQueue] = useState<StoredCard[]>([]);
   const [practiceIndex, setPracticeIndex] = useState(0);
-  const PRACTICE_ROUND = 10;
+  // I1 练习范围偏好（settings key='practiceScope' / 'practiceCefr'）：范围把抽题池从
+  // 「已学卡全集」缩到「范围 ∩ 已学卡」；scopePool=过滤后池大小（null=重建中/未定）
+  const [scope, setScope] = useState<PracticeScope>('all');
+  const [cefrLevel, setCefrLevel] = useState<PracticeCefr>('A1');
+  const [scopePool, setScopePool] = useState<number | null>(null);
+  // 已学卡全集（review_card 全量 + 本次聚焦补的新卡）：范围重建 effect 的唯一输入，
+  // 切范围不必重跑整个聚焦流程
+  const [learnedCards, setLearnedCards] = useState<StoredCard[]>([]);
+  // 聚焦代次：每次聚焦 +1 强制重建练习池（收藏可能在他处增删），无需比较 scope 是否变化
+  const [scopeEpoch, setScopeEpoch] = useState(0);
+  // I1 乐观写 G3 竞态守卫（同 stats.tsx prefWriteSeqRef/prefWritePendingRef）：scope 与 cefr
+  // 两键共用一组序号，聚焦读发起时记序号，期间发生过切换/在途写未落库则不覆盖本地状态
+  const scopeWriteSeqRef = useRef(0);
+  const scopeWritePendingRef = useRef(false);
 
   // E5 上游接入骨架：探测发布物是否带例句 / CEFR 数据（v0.2 起才有），失败按无数据处理
   const [upstream, setUpstream] = useState({ hasExample: false, hasCefr: false });
@@ -124,6 +159,13 @@ export default function StudyScreen() {
           setRatingMode(savedRating);
           // 恢复新卡补卡顺序偏好（H2，统计页三段选择 / 备份导入都会改库），无效值回退词频序
           const savedOrder = parseNewCardOrder(await getSetting(NEW_CARD_ORDER_KEY).catch(() => null));
+          // 恢复练习范围偏好（I1，本屏切换 / 备份导入都会改库）：两键各自兜底互不连累；
+          // 守卫见 scopeWriteSeqRef 注释——聚焦读发起时记序号，期间发生过本地切换则放弃覆盖
+          const scopeReadSeq = scopeWriteSeqRef.current;
+          const savedScope = parsePracticeScope(
+            await getSetting(PRACTICE_SCOPE_KEY).catch(() => null),
+          );
+          const savedCefr = parsePracticeCefr(await getSetting(PRACTICE_CEFR_KEY).catch(() => null));
           const goal = await getDailyGoal(day);
           const stored = await getReviewCards();
           // F5 双目标分口径：复习缺口无法人为补（只能等排期到期），
@@ -171,9 +213,14 @@ export default function StudyScreen() {
           setNewCompleted(goal.newCompleted);
           setQueue(spreadByHeadword(todayQueue, (c) => content.get(c.stableId)?.headword ?? c.stableId));
           setSenses(content);
-          // 自由练习轮：从已学卡随机抽（与正式排期无关，每轮不同）
-          setPracticeQueue(pickPracticeRound(all, PRACTICE_ROUND));
-          setPracticeIndex(0);
+          // 自由练习抽题池由下方 scope 重建 effect 统一计算（I1：范围 ∩ 已学卡）；
+          // 这里只恢复范围偏好（G3 守卫：在途写/期间切换不回退本地状态）、刷新已学卡全集并推进聚焦代次
+          if (scopeWriteSeqRef.current === scopeReadSeq && !scopeWritePendingRef.current) {
+            setScope(savedScope);
+            setCefrLevel(savedCefr);
+          }
+          setLearnedCards(all);
+          setScopeEpoch((e) => e + 1);
           // 批量预取：把整队前 10 个词头的音频 URL 提前拉好（错过的卡片点开即响）
           for (const c of todayQueue.slice(0, 10)) {
             const w = content.get(c.stableId)?.headword;
@@ -224,10 +271,77 @@ export default function StudyScreen() {
     };
   }, [quizMode, currentPos, currentStableId]);
 
+  // I1：按当前范围重建自由练习抽题池（聚焦代次 / 范围 / CEFR 档位 / 已学卡任一变化都重算）。
+  // 范围集合来自发布物（收藏经 learning.db entry_id 关联再查发布物义项），与已学卡求交在 JS 侧做
+  // （filterPracticeScope，两边都是有界小集合）；抽中卡片同步补拉义项内容——范围池常含今日队列之外的卡，
+  // 不补拉会渲染成空白。落库失败按空池处理，不阻断学习屏其他区域。
+  useEffect(() => {
+    if (!ready) return;
+    let alive = true;
+    void (async () => {
+      try {
+        let scopeSet: ReadonlySet<string> | null = null;
+        if (scope === 'favorites') {
+          const favoriteIds = await getFavoriteEntryIds();
+          scopeSet = new Set(await getStableIdsForEntries(favoriteIds));
+        } else if (scope === 'exam') {
+          scopeSet = new Set(await getExamScopeStableIds());
+        } else if (scope === 'cefr') {
+          scopeSet = new Set(await getCefrScopeStableIds(cefrLevel));
+        }
+        const pool = filterPracticeScope(learnedCards, scopeSet);
+        const round = pickPracticeRound(pool, PRACTICE_ROUND);
+        const practiceContent = await getStudySenses(round.map((c) => c.stableId));
+        if (!alive) return;
+        if (practiceContent.size > 0) {
+          setSenses((prev) => new Map([...prev, ...practiceContent]));
+        }
+        setPracticeQueue(round);
+        setPracticeIndex(0);
+        setScopePool(pool.length);
+      } catch {
+        if (alive) {
+          setPracticeQueue([]);
+          setScopePool(0);
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [ready, learnedCards, scope, cefrLevel, scopeEpoch]);
+
   // 切模式即记忆：写入 settings，下次聚焦恢复；落库失败静默（本次会话内仍生效）
   const changeMode = useCallback((next: StudyMode) => {
     setMode(next);
     void setSetting(STUDY_MODE_KEY, next).catch(() => {});
+  }, []);
+
+  // 切范围 / 切 CEFR 档即写入 settings（I1），当前会话立即生效（重建 effect 依赖 scope/cefrLevel），
+  // 下次聚焦恢复；乐观写走 G3 竞态守卫（scopeWriteSeqRef，两键共用一组序号，同 stats.tsx）；
+  // 落库失败静默，下次聚焦读会以 DB 真值重新对齐。切档先置空池大小，hint/空态按「重建中」处理。
+  const changePracticeScope = useCallback((next: PracticeScope) => {
+    const writeSeq = ++scopeWriteSeqRef.current;
+    scopeWritePendingRef.current = true;
+    setScope(next);
+    setScopePool(null);
+    setSetting(PRACTICE_SCOPE_KEY, next)
+      .catch(() => {})
+      .finally(() => {
+        if (scopeWriteSeqRef.current === writeSeq) scopeWritePendingRef.current = false;
+      });
+  }, []);
+
+  const changePracticeCefr = useCallback((next: PracticeCefr) => {
+    const writeSeq = ++scopeWriteSeqRef.current;
+    scopeWritePendingRef.current = true;
+    setCefrLevel(next);
+    setScopePool(null);
+    setSetting(PRACTICE_CEFR_KEY, next)
+      .catch(() => {})
+      .finally(() => {
+        if (scopeWriteSeqRef.current === writeSeq) scopeWritePendingRef.current = false;
+      });
   }, []);
 
   const rate = useCallback(
@@ -342,6 +456,47 @@ export default function StudyScreen() {
             <Text style={styles.wrongBtnText}>错题本</Text>
           </Pressable>
         </View>
+        {quizMode ? (
+          // I1 练习范围选择：仅练习/听音/拼写模式显示（卡片模式不显示）；选 CEFR 追加五档小 chip
+          <View style={styles.scopeRow}>
+            <View style={styles.segRow} accessibilityRole="tablist">
+              {PRACTICE_SCOPE_OPTIONS.map((opt) => {
+                const active = opt.value === scope;
+                return (
+                  <Pressable
+                    key={opt.value}
+                    onPress={() => changePracticeScope(opt.value)}
+                    style={[styles.segChip, active && styles.segChipActive]}
+                    accessibilityRole="tab"
+                    accessibilityLabel={`练习范围：${opt.label}`}
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Text style={[styles.segChipText, active && styles.segChipTextActive]}>{opt.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {scope === 'cefr' ? (
+              <View style={styles.segRow}>
+                {PRACTICE_CEFR_LEVELS.map((lv) => {
+                  const active = lv === cefrLevel;
+                  return (
+                    <Pressable
+                      key={lv}
+                      onPress={() => changePracticeCefr(lv)}
+                      style={[styles.cefrChip, active && styles.segChipActive]}
+                      accessibilityRole="tab"
+                      accessibilityLabel={`CEFR 档位：${lv}`}
+                      accessibilityState={{ selected: active }}
+                    >
+                      <Text style={[styles.cefrChipText, active && styles.segChipTextActive]}>{lv}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
         <View style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
         </View>
@@ -350,12 +505,31 @@ export default function StudyScreen() {
             ? `本轮 ${practiceIndex}/${practiceQueue.length || PRACTICE_ROUND} · 自由练习`
             : `今日 复习 ${completed}/${target} · 新学 ${newCompleted}/${newTarget} · 剩 ${queue.length}`}
         </Text>
+        {quizMode && scope !== 'all' && scopePool !== null && scopePool < PRACTICE_ROUND ? (
+          // 范围内候选不足一轮时明示池大小（数据足够时不显示，scope='all' 恒不显示）
+          <Text style={styles.scopeHint}>该范围共 {scopePool} 张</Text>
+        ) : null}
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {quizMode ? (
-        practiceFinished ? (
+        practiceQueue.length === 0 ? (
+          // 池空（含首建未完成）：重建中给 spinner，已定空池给空态（scope=all 且 0 已学卡也走这里，
+          // 顺带修掉原实现下新用户切练习模式无限 spinner 的暗坑）
+          scopePool === null ? (
+            <ActivityIndicator color={t.primary} style={{ marginTop: 40 }} />
+          ) : (
+            <View style={styles.centerBox}>
+              <Text style={styles.doneTitle}>该范围还没有可练的卡</Text>
+              <Text style={styles.doneSub}>
+                {scope === 'all'
+                  ? '自由练习只从已学卡抽题。先在「卡片」模式学几个词，再回来练。'
+                  : `「${PRACTICE_SCOPE_LABELS[scope]}${scope === 'cefr' ? `·${cefrLevel}` : ''}」范围内共 0 张已学卡，切回「全部」或先去学几个词。`}
+              </Text>
+            </View>
+          )
+        ) : practiceFinished ? (
           <View style={styles.centerBox}>
             <Text style={styles.doneTitle}>本轮练习完成</Text>
             <Text style={styles.doneSub}>
@@ -535,6 +709,32 @@ function makeStyles(t: ReturnType<typeof useTheme>) {
     },
     progressFill: { height: 6, backgroundColor: t.accentSuccess },
     progressText: { color: t.textMuted, fontSize: 12 },
+    // I1 练习范围行 + 分段控件（沿用 history.tsx segChip 既有风格，同源 modeChip）
+    scopeRow: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 6 },
+    segRow: { flexDirection: 'row' },
+    segChip: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.border,
+      backgroundColor: t.bgSurface,
+      marginLeft: 6,
+    },
+    segChipActive: { backgroundColor: t.bgSurfaceElevated, borderColor: t.borderStrong },
+    segChipText: { color: t.textMuted, fontSize: 12, fontWeight: '700' },
+    segChipTextActive: { color: t.textPrimary },
+    cefrChip: {
+      paddingHorizontal: 7,
+      paddingVertical: 4,
+      borderRadius: 7,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: t.border,
+      backgroundColor: t.bgSurface,
+      marginLeft: 6,
+    },
+    cefrChipText: { color: t.textMuted, fontSize: 11, fontWeight: '700' },
+    scopeHint: { color: t.textMuted, fontSize: 11 },
     cardArea: { paddingTop: 12, gap: 12 },
     card: {
       backgroundColor: t.bgSurface,
