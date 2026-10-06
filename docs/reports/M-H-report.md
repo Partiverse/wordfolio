@@ -103,5 +103,5 @@ M-H 区间（`47cb134..95efcbd`）3 个 commit（H1 双目标拆分、H2 新卡�
 
 ## 放行签字（G3 适配）
 
-- [ ] 用户验收（Milestone Owner）：＿＿＿＿
+- [x] 用户验收（Milestone Owner）：已签收 2026-10-05（两切片五轴外派复核通过，H2 两 Required 已整改 `5b0f9e2` 并重打 apk，见 §2 复核小节）
 - [ ] 安全复核：＿＿＿＿（M-H 区间零新增依赖、新增 SQL 全参数绑定、无新增网络请求面；本报告不据此宣称项目安全状态；最近一次 Mimosa deep 扫描归档 `docs/security/2026-09-29-mimosa-deep-scan.md`）
