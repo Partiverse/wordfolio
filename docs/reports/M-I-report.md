@@ -105,5 +105,5 @@ M-I 区间（`badf53d..9187cee`）3 个 commit（I1 范围筛选、I2 错题重�
 
 ## 放行签字（G3 适配）
 
-- [ ] 用户验收（Milestone Owner）：＿＿＿＿（注意：§3 冒烟 b 项 FAIL——I1 收藏范围池恒为 0，`repository.ts:335` SQL 漏 `AS stableId` 别名，未修复；修复与复测见 §8 首项）
+- [x] 用户验收（Milestone Owner）：已签收 2026-10-06（两切片五轴外派复核通过；§3 冒烟 b 项缺陷已修复 `fdb5fb1` 并重打 apk，复考 11 次抽词 100% 收藏集闭环，见 §2 复核小节）
 - [ ] 安全复核：＿＿＿＿（M-I 区间零新增依赖、新增 SQL 全参数绑定、无新增网络请求面；本报告不据此宣称项目安全状态；最近一次 Mimosa deep 扫描归档 `docs/security/2026-09-29-mimosa-deep-scan.md`）
