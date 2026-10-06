@@ -37,7 +37,7 @@ import {
   parseNewCardOrder,
   type NewCardCandidate,
 } from '@/study/order-core';
-import { filterPracticeScope, pickPracticeRound, spreadByHeadword } from '@/study/queue';
+import { filterPracticeScope, pickPracticeRound, retryWrong, spreadByHeadword } from '@/study/queue';
 import { parseStudyMode, type StudyMode } from '@/study/mode-core';
 import {
   PRACTICE_CEFR_KEY,
@@ -109,6 +109,9 @@ export default function StudyScreen() {
   // 自由练习（练习/听音/拼写）：独立于卡片正式队列，只记 review_log 不动 FSRS 排期
   const [practiceQueue, setPracticeQueue] = useState<StoredCard[]>([]);
   const [practiceIndex, setPracticeIndex] = useState(0);
+  // I2 轮内错题重试：本轮已答错卡的 stableId 集合（兼「本轮答错 x」计数，同卡重试后再错不重复
+  // 累计）；每卡每轮最多重试一次，重建轮 / 「再来一轮」时清空
+  const [practiceRetried, setPracticeRetried] = useState<ReadonlySet<string>>(new Set());
   // I1 练习范围偏好（settings key='practiceScope' / 'practiceCefr'）：范围把抽题池从
   // 「已学卡全集」缩到「范围 ∩ 已学卡」；scopePool=过滤后池大小（null=重建中/未定）
   const [scope, setScope] = useState<PracticeScope>('all');
@@ -298,10 +301,12 @@ export default function StudyScreen() {
         }
         setPracticeQueue(round);
         setPracticeIndex(0);
+        setPracticeRetried(new Set());
         setScopePool(pool.length);
       } catch {
         if (alive) {
           setPracticeQueue([]);
+          setPracticeRetried(new Set());
           setScopePool(0);
         }
       }
@@ -380,12 +385,22 @@ export default function StudyScreen() {
       try {
         const now = new Date();
         void logReview(practiceCurrent.stableId, correct ? 3 : 1, now.toISOString(), 'practice');
-        setPracticeIndex((i) => i + 1);
+        if (correct) {
+          setPracticeIndex((i) => i + 1);
+        } else {
+          // I2 轮内错题重试：首错尾插到队尾（moved）——当前卡移走后下一张自动落位到原
+          // index，游标保持不 +1；二错不重排 / 队尾卡无可重排 / 卡不在队内（防御）都
+          // moved=false，按跳过 +1 收尾。重试作答同样只走上面的 review_log(kind='practice')
+          const res = retryWrong(practiceQueue, practiceCurrent.stableId, practiceRetried);
+          setPracticeQueue(res.queue);
+          setPracticeRetried(res.retried);
+          setPracticeIndex((i) => (res.moved ? i : i + 1));
+        }
       } finally {
         setBusy(false);
       }
     },
-    [practiceCurrent, busy],
+    [practiceCurrent, busy, practiceQueue, practiceRetried],
   );
 
   if (!ready) {
@@ -509,6 +524,10 @@ export default function StudyScreen() {
           // 范围内候选不足一轮时明示池大小（数据足够时不显示，scope='all' 恒不显示）
           <Text style={styles.scopeHint}>该范围共 {scopePool} 张</Text>
         ) : null}
+        {quizMode && practiceRetried.size > 0 ? (
+          // I2 轮内错题统计：有重试才显示；x=本轮已答错卡数（同卡重试后再错不重复累计）
+          <Text style={styles.scopeHint}>本轮答错 {practiceRetried.size}</Text>
+        ) : null}
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -535,7 +554,14 @@ export default function StudyScreen() {
             <Text style={styles.doneSub}>
               已练 {practiceQueue.length} 个义项（自由练习不计入今日进度、不影响排期）。
             </Text>
-            <Pressable style={styles.revealBtn} onPress={() => setPracticeIndex(0)} accessibilityRole="button">
+            <Pressable
+              style={styles.revealBtn}
+              onPress={() => {
+                setPracticeIndex(0);
+                setPracticeRetried(new Set()); // I2：「本轮答错 x」按轮清零
+              }}
+              accessibilityRole="button"
+            >
               <Text style={styles.revealBtnText}>再来一轮</Text>
             </Pressable>
           </View>

@@ -59,3 +59,43 @@ export function filterPracticeScope<T extends SpreadableCard>(
   if (!scopeStableIds) return [...cards];
   return cards.filter((c) => scopeStableIds.has(c.stableId));
 }
+
+export interface RetryWrongResult<T> {
+  /** 重排后的队列（首错尾插）；未重排时为入参的副本 */
+  queue: T[];
+  /** 记账后的已答错卡集合（同卡重试后再错不重复累计），兼当「本轮答错 x」计数 */
+  retried: ReadonlySet<string>;
+  /**
+   * 队列顺序是否真的变了。调用方据此决定游标：moved=true 说明当前卡已移走、
+   * 下一张自动落位到原 index（游标保持）；moved=false 原样跳过（游标 +1）。
+   */
+  moved: boolean;
+}
+
+/**
+ * 轮内错题重试（I2）：把答错卡移到队尾，本轮稍后再来一次。
+ * - 每卡每轮最多重试一次：stableId 已在 retriedSet 则不再重排（二错只记账不重排→游标跳过）；
+ * - stableId 不在队内（理论上不该发生）：安全原样返回，不改记账；
+ * - 答错卡已是队尾时「移到队尾」不改变顺序（moved=false）：本轮无可排的后续卡，
+ *   按跳过处理收尾（同卡原位重显会因 stableId 作 key 不重挂载、卡在已答状态，故不这么做）。
+ * 纯函数：不改入参数组与集合，no-op 分支也返回副本。
+ */
+export function retryWrong<T extends SpreadableCard>(
+  queue: readonly T[],
+  stableId: string,
+  retriedSet: ReadonlySet<string>,
+): RetryWrongResult<T> {
+  if (retriedSet.has(stableId)) {
+    return { queue: [...queue], retried: new Set(retriedSet), moved: false };
+  }
+  const index = queue.findIndex((c) => c.stableId === stableId);
+  if (index === -1) {
+    return { queue: [...queue], retried: new Set(retriedSet), moved: false };
+  }
+  const next = [...queue];
+  const [missed] = next.splice(index, 1);
+  next.push(missed);
+  const nextRetried = new Set(retriedSet);
+  nextRetried.add(stableId);
+  return { queue: next, retried: nextRetried, moved: index !== queue.length - 1 };
+}

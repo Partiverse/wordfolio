@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { filterPracticeScope, pickPracticeRound, spreadByHeadword } from '../src/study/queue';
+import { filterPracticeScope, pickPracticeRound, retryWrong, spreadByHeadword } from '../src/study/queue';
 
 interface Card {
   stableId: string;
@@ -93,5 +93,62 @@ describe('filterPracticeScope', () => {
     const scope = new Set(['a#1', 'c#1']);
     const round = pickPracticeRound(filterPracticeScope(pool, scope), 10);
     expect(new Set(round.map((x) => x.stableId))).toEqual(scope);
+  });
+});
+
+describe('retryWrong', () => {
+  const q = (id: string) => ({ stableId: id });
+  const order = (queue: { stableId: string }[]) => queue.map((c) => c.stableId);
+
+  it('moves the missed card to the tail and records it (retry requeue)', () => {
+    const res = retryWrong([q('a'), q('b'), q('c')], 'a', new Set());
+    expect(order(res.queue)).toEqual(['b', 'c', 'a']);
+    expect([...res.retried]).toEqual(['a']);
+    expect(res.moved).toBe(true);
+  });
+
+  it('keeps the relative order of the untouched cards', () => {
+    const res = retryWrong([q('a'), q('b'), q('c'), q('d')], 'b', new Set());
+    expect(order(res.queue)).toEqual(['a', 'c', 'd', 'b']);
+  });
+
+  it('does not requeue a card that already used its retry (second miss)', () => {
+    const res = retryWrong([q('a'), q('b')], 'a', new Set(['a']));
+    expect(order(res.queue)).toEqual(['a', 'b']); // 不重排
+    expect(res.retried.size).toBe(1); // 重试后再错不再累计
+    expect(res.moved).toBe(false);
+  });
+
+  it('is a safe no-op for a stableId outside the queue', () => {
+    const res = retryWrong([q('a'), q('b')], 'zz', new Set());
+    expect(order(res.queue)).toEqual(['a', 'b']);
+    expect(res.retried.size).toBe(0);
+    expect(res.moved).toBe(false);
+  });
+
+  it('treats a last-position miss as bookkeeping only (tail insert changes nothing)', () => {
+    const res = retryWrong([q('a'), q('b')], 'b', new Set());
+    expect(order(res.queue)).toEqual(['a', 'b']);
+    expect([...res.retried]).toEqual(['b']);
+    expect(res.moved).toBe(false);
+  });
+
+  it('requeues several distinct misses in one round (at most one retry each)', () => {
+    let queue = [q('a'), q('b'), q('c')];
+    let retried: ReadonlySet<string> = new Set<string>();
+    ({ queue, retried } = retryWrong(queue, 'a', retried)); // [b, c, a]
+    ({ queue, retried } = retryWrong(queue, 'b', retried)); // [c, a, b]
+    expect(order(queue)).toEqual(['c', 'a', 'b']);
+    expect(retried.size).toBe(2);
+  });
+
+  it('does not mutate the input queue or retried set', () => {
+    const queue = [q('a'), q('b'), q('c')];
+    const retried = new Set(['x']);
+    const queueSnapshot = [...queue];
+    retryWrong(queue, 'a', retried);
+    expect(queue).toEqual(queueSnapshot);
+    expect(queue).not.toBe(retryWrong(queue, 'a', retried).queue); // 返回副本，不复用入参数组
+    expect([...retried]).toEqual(['x']);
   });
 });
